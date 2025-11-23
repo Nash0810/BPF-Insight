@@ -1,0 +1,127 @@
+###############################
+# BPFInsight / Go Project
+###############################
+
+# Go build outputs
+/bpfva
+/bin/
+/build/
+/dist/
+
+# Go test cache & coverage
+*.out
+*.test
+coverage.txt
+
+# Go modules
+go.sum
+vendor/
+
+###############################
+# eBPF & ELF Artifacts
+###############################
+
+# Compiled BPF object files (.o)
+test/compiled/*.o
+*.o
+
+# BPF skeletons / generated maps
+*.skel.h
+
+# LLVM/Clang outputs
+*.ll
+*.bc
+
+###############################
+# CFG Visualization Artifacts
+###############################
+
+# Graphviz dot & rendered images
+*.dot
+*.png
+*.svg
+*.pdf
+
+# Example visual output
+examples/*.dot
+examples/*.png
+examples/*.svg
+examples/*.pdf
+
+###############################
+# Editor & IDE Files
+###############################
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains (GoLand)
+.idea/
+*.iml
+
+# Vim
+*.swp
+*.swo
+
+# Emacs
+*~
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+###############################
+# OS & Miscellaneous
+###############################
+
+# macOS
+.DS_Store
+.AppleDouble
+._*
+
+# Linux temp files
+*~
+*.tmp
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+###############################
+# Logs & Runtime Data
+###############################
+
+*.log
+logs/
+log/
+
+# tmp directories
+tmp/
+temp/
+
+###############################
+# Docker / Build Environment
+###############################
+
+# Docker artifact
+docker/*.tar
+docker-build/
+.dockerignore
+
+###############################
+# Scripts Output
+###############################
+
+scripts/*.tmp
+scripts/*.bak
+validation_results.txt
+
+###############################
+# Project Documentation Artifacts
+###############################
+
+# Markdown processor temp files
+*.md.tmp
+*.md.bak
