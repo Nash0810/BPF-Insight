@@ -84,7 +84,7 @@ func BuildCFG(blocks []*BasicBlock) *CFG {
     instToBlock := make(map[int]int)
     for _, blk := range blocks {
         for _, ins := range blk.Instructions {
-            instToBlock[ins.Offset] = blk.ID
+            instToBlock[ins.Off()] = blk.ID
         }
     }
 
@@ -93,7 +93,7 @@ func BuildCFG(blocks []*BasicBlock) *CFG {
 
         // Jump instruction: add jump edge AND fall-through edge
         if last.IsJump() {
-            jumpTarget := last.Offset + 1 + int(last.OffsetVal)
+            jumpTarget := last.Off() + 1 + int(last.OffsetVal)
             if bid, ok := instToBlock[jumpTarget]; ok {
                 blk.Successors = addUniqueEdge(blk.Successors, bid)
                 blocks[bid].Predecessors = addUniqueEdge(blocks[bid].Predecessors, blk.ID)

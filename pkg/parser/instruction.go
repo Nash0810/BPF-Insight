@@ -5,84 +5,145 @@ import (
 	"fmt"
 )
 
-// eBPF instruction is 8 bytes:
-//  0: opcode
-//  1: registers (src in upper nibble, dst in lower nibble)
-//  2-3: offset (int16)
-//  4-7: immediate (int32)
-//
-// LD_IMM64 uses two instructions (16 bytes total)
-
 type Instruction struct {
 	Opcode    uint8
-	Regs      uint8
+	DstReg    uint8
+	SrcReg    uint8
 	OffsetVal int16
 	Imm       int32
-	Offset    int // program counter (per instruction)
+	Raw       []byte
 }
 
-func DecodeInstructions(raw []byte) ([]Instruction, error) {
-	var insns []Instruction
+// -------- Basic Getters --------
 
-	for pc := 0; pc < len(raw); {
-		if pc+8 > len(raw) {
-			return nil, fmt.Errorf("truncated instruction at offset %d", pc)
-		}
-
-		ins := Instruction{
-			Opcode:    raw[pc],
-			Regs:      raw[pc+1],
-			OffsetVal: int16(binary.LittleEndian.Uint16(raw[pc+2:])),
-			Imm:       int32(binary.LittleEndian.Uint32(raw[pc+4:])),
-			Offset:    pc / 8,
-		}
-
-		insns = append(insns, ins)
-		pc += 8
-
-		// Handle 16-byte LD_IMM64 (0x18)
-		if ins.Opcode == 0x18 {
-			if pc+8 > len(raw) {
-				return nil, fmt.Errorf("truncated LD_IMM64 at offset %d", pc)
-			}
-
-			upper := binary.LittleEndian.Uint32(raw[pc+4:])
-			fullImm := (uint64(uint32(ins.Imm))) | (uint64(upper) << 32)
-			ins.Imm = int32(fullImm) // truncated but OK for CFG
-
-			insns[len(insns)-1] = ins // update
-			pc += 8
-		}
-	}
-
-	return insns, nil
-}
-
-// Extract destination register from Regs
 func (i Instruction) Dst() int {
-	return int(i.Regs & 0x0f)
+	return int(i.DstReg)
 }
 
-// Extract source register from Regs
 func (i Instruction) Src() int {
-	return int((i.Regs >> 4) & 0x0f)
+	return int(i.SrcReg)
 }
+
+func (i Instruction) Off() int {
+	return int(i.OffsetVal)
+}
+
+// Size for BPF LOAD/STORE instructions (encoded in opcode upper bits)
+func (i Instruction) Size() int {
+	// BPF size bits: opcode >> 3 & 0x3
+	sz := (i.Opcode >> 3) & 0x03
+	switch sz {
+	case 0:
+		return 1
+	case 1:
+		return 2
+	case 2:
+		return 4
+	case 3:
+		return 8
+	}
+	return 0
+}
+
+// -------- Instruction Class Helpers (BPF encoding) --------
+
+// Instruction class (lowest 3 bits of opcode)
+func (i Instruction) Class() uint8 {
+	return i.Opcode & 0x07
+}
+
+// BPF classes
+const (
+	BPF_LD  = 0x00
+	BPF_LDX = 0x01
+	BPF_ST  = 0x02
+	BPF_STX = 0x03
+	BPF_ALU = 0x04
+	BPF_JMP = 0x05
+	BPF_RET = 0x06
+	BPF_ALU64 = 0x07
+)
+
+// -------- Type Checkers --------
 
 func (i Instruction) IsHelperCall() bool {
-	return i.Opcode == 0x85 // BPF_CALL
+	return i.Class() == BPF_JMP && (i.Opcode&0xf0) == 0x80 // 0x85 = CALL
+}
+
+func (i Instruction) IsJump() bool {
+	return i.Class() == BPF_JMP && !i.IsHelperCall() && !i.IsExit()
 }
 
 func (i Instruction) IsExit() bool {
-	return i.Opcode == 0x95 // BPF_EXIT
+	return i.Opcode == 0x95
 }
 
-// Correct jump detection (NO false positives on CALL)
-func (i Instruction) IsJump() bool {
-	switch i.Opcode {
-	case 0x05: // JA (jump always)
-		return true
-	case 0x15, 0x25, 0x35, 0x45, 0x55: // JEQ, JGT, JGE, JSET, JNE
-		return true
+func (i Instruction) IsMove() bool {
+	// MOV opcode family = 0xb*
+	return (i.Opcode & 0xf0) == 0xb0
+}
+
+func (i Instruction) IsALU() bool {
+	// ALU or ALU64 classes
+	class := i.Class()
+	return class == BPF_ALU || class == BPF_ALU64
+}
+
+func (i Instruction) IsLoad() bool {
+	class := i.Class()
+	return class == BPF_LD || class == BPF_LDX
+}
+
+func (i Instruction) IsStore() bool {
+	class := i.Class()
+	return class == BPF_ST || class == BPF_STX
+}
+
+// -------- Decode ELF raw instruction --------
+
+func DecodeInstruction(raw []byte) (Instruction, error) {
+	if len(raw) != 8 {
+		return Instruction{}, fmt.Errorf("invalid instruction size")
 	}
-	return false
+
+	opcode := raw[0]
+	dst := raw[1] & 0x0f
+	src := (raw[1] >> 4) & 0x0f
+	off := int16(binary.LittleEndian.Uint16(raw[2:4]))
+	imm := int32(binary.LittleEndian.Uint32(raw[4:8]))
+
+	return Instruction{
+		Opcode:    opcode,
+		DstReg:    dst,
+		SrcReg:    src,
+		OffsetVal: off,
+		Imm:       imm,
+		Raw:       raw,
+	}, nil
+}
+
+func (i Instruction) IsPtrArithmetic() bool {
+    class := i.Class()
+
+    if class != BPF_ALU && class != BPF_ALU64 {
+        return false
+    }
+
+    op := i.Opcode & 0xf0 // ALU op code
+
+    switch op {
+    case 0x00: // ADD
+    case 0x10: // SUB
+    case 0x20: // MUL
+    case 0x30: // DIV
+    case 0x40: // OR
+    case 0x50: // AND
+    case 0x60: // LSH (<<)
+    case 0x70: // RSH (>>)
+    case 0xa0: // XOR
+    case 0xc0: // ARSH
+        return true
+    }
+
+    return false
 }
