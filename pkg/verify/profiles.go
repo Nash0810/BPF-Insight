@@ -1,45 +1,65 @@
 package verify
 
-// Profile definitions
-// These specify which rules are turned on in each profile.
-var Profiles = map[string][]string{
+import "fmt"
 
-    // Balanced default
+type Profile struct {
+    Name        string
+    Description string
+    Enable      []string
+}
+
+var Profiles = map[string]Profile{
     "default": {
-        "pointer_arithmetic",
-        "write_r10",
-        "stack_var_offset",
-        "map_no_nullcheck",
-        "helper_chain",
-        "unknown_jump",
-        "high_complexity",
+        Name:        "default",
+        Description: "Balanced defaults for static analysis",
+        Enable: []string{
+            "ptr", "stack", "r10", "helpers",
+            "nullcheck", "mapkey", "complex",
+        },
     },
 
-    // Strict: more aggressive, for debugging complex kernels
     "strict": {
-        "pointer_arithmetic",
-        "write_r10",
-        "stack_var_offset",
-        "map_no_nullcheck",
-        "map_update_nocheck",
-        "helper_chain",
-        "unknown_jump",
-        "high_complexity",
+        Name:        "strict",
+        Description: "Kernel-like strictness",
+        Enable: []string{
+            "ptr", "stack", "r10", "helpers",
+            "nullcheck", "mapkey", "complex",
+            "jump", "fanout", "ctx",
+        },
     },
 
-    // Kernel-like verifier rigidity
-    "kernel": {
-        "pointer_arithmetic",
-        "write_r10",
-        "map_no_nullcheck",
-        "map_update_nocheck",
-        "unknown_jump",
-        "high_complexity",
+    "safe": {
+        Name:        "safe",
+        Description: "Safety-focused minimal rule set",
+        Enable: []string{
+            "ptr", "r10", "nullcheck", "mapkey",
+        },
     },
+}
 
-    // Very forgiving
-    "relaxed": {
-        "write_r10",
-        "map_no_nullcheck",
-    },
+// Apply profile by name
+func ApplyProfile(name string) error {
+    p, ok := Profiles[name]
+    if !ok {
+        return fmt.Errorf("unknown profile: %s", name)
+    }
+
+    // Disable all
+    for _, r := range Rules {
+        r.Enabled = false
+    }
+
+    // Enable selected
+    for _, rule := range p.Enable {
+		if long, ok := RuleAliases[rule]; ok {
+			rule = long
+		}
+        r, ok := Rules[rule]
+        if !ok {
+            return fmt.Errorf("profile %s references unknown rule: %s", name, rule)
+        }
+        r.Enabled = true
+    }
+
+    return nil
 }

@@ -5,7 +5,7 @@ import (
     "os"
     "strings"
 
-    "github.com/yourusername/bpfinsight/pkg/parser"
+    "github.com/Nash0810/BPF-Insight/pkg/parser"
 )
 
 

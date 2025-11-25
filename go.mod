@@ -1,4 +1,4 @@
-module github.com/yourusername/bpfinsight
+module github.com/Nash0810/BPF-Insight
 
 go 1.21
 

@@ -54,13 +54,13 @@ func (i Instruction) Class() uint8 {
 
 // BPF classes
 const (
-	BPF_LD  = 0x00
-	BPF_LDX = 0x01
-	BPF_ST  = 0x02
-	BPF_STX = 0x03
-	BPF_ALU = 0x04
-	BPF_JMP = 0x05
-	BPF_RET = 0x06
+	BPF_LD    = 0x00
+	BPF_LDX   = 0x01
+	BPF_ST    = 0x02
+	BPF_STX   = 0x03
+	BPF_ALU   = 0x04
+	BPF_JMP   = 0x05
+	BPF_RET   = 0x06
 	BPF_ALU64 = 0x07
 )
 
@@ -123,27 +123,27 @@ func DecodeInstruction(raw []byte) (Instruction, error) {
 }
 
 func (i Instruction) IsPtrArithmetic() bool {
-    class := i.Class()
+	class := i.Class()
 
-    if class != BPF_ALU && class != BPF_ALU64 {
-        return false
-    }
+	if class != BPF_ALU && class != BPF_ALU64 {
+		return false
+	}
 
-    op := i.Opcode & 0xf0 // ALU op code
+	op := i.Opcode & 0xf0 // ALU op code
 
-    switch op {
-    case 0x00: // ADD
-    case 0x10: // SUB
-    case 0x20: // MUL
-    case 0x30: // DIV
-    case 0x40: // OR
-    case 0x50: // AND
-    case 0x60: // LSH (<<)
-    case 0x70: // RSH (>>)
-    case 0xa0: // XOR
-    case 0xc0: // ARSH
-        return true
-    }
+	switch op {
+	case 0x00: // ADD
+	case 0x10: // SUB
+	case 0x20: // MUL
+	case 0x30: // DIV
+	case 0x40: // OR
+	case 0x50: // AND
+	case 0x60: // LSH (<<)
+	case 0x70: // RSH (>>)
+	case 0xa0: // XOR
+	case 0xc0: // ARSH
+		return true
+	}
 
-    return false
+	return false
 }

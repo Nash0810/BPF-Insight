@@ -1,7 +1,7 @@
 package cfg
 
 import (
-    "github.com/yourusername/bpfinsight/pkg/parser"
+    "github.com/Nash0810/BPF-Insight/pkg/parser"
 )
 
 type BasicBlock struct {

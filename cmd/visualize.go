@@ -7,8 +7,8 @@ import (
     "path/filepath"
 
     "github.com/spf13/cobra"
-    "github.com/yourusername/bpfinsight/pkg/parser"
-    "github.com/yourusername/bpfinsight/pkg/cfg"
+    "github.com/Nash0810/BPF-Insight/pkg/parser"
+    "github.com/Nash0810/BPF-Insight/pkg/cfg"
 )
 
 var render bool
