@@ -1,163 +1,168 @@
 package cfg
 
 import (
+	"fmt"
 	"math"
+	"sort"
+
+	"github.com/cilium/ebpf/asm"
 )
 
-type BlockScore struct {
-	BlockID      int
-	Score        float64
-	Insns        int
-	Jumps        int
-	Helpers      int
-	Successors   []int
-	IsLoopHeader bool
-	IsLoopBlock  bool
+// CFGMetrics holds the results of the CFG analysis needed for the total score calculation.
+type CFGMetrics struct {
+	MaxDepth     int
+	AvgBranching float64
 }
 
-type ProgramScore struct {
-	TotalScore float64
-	Blocks     []BlockScore
-	Prediction string
+// BlockComplexity holds the per-block score used for hotspot ranking.
+type BlockComplexity struct {
+	Block           *BasicBlock
+	OffsetRange     string // "start-end" (in BPF instruction number)
+	InsnCount       int
+	SuccessorCount  int
+	IsLoopHeader    bool
+	Depth           int
+	ComplexityScore float64
+	Reason          string
 }
 
-var helperCost = map[int]int{
-	5:  2, // ktime_get_ns
-	14: 1, // get_pid_tgid
-	7:  3, // prandom
+// CalculateScores runs all CFG-based analyses: MaxDepth, AvgBranching, and per-block Hotspots.
+func CalculateScores(progCFG *CFG, insts []asm.Instruction) (CFGMetrics, []BlockComplexity) {
+	// 1. Calculate Per-Block Depth and Branching
+	depths := calculateDepths(progCFG)
+
+	totalSuccessors := 0
+	for _, block := range progCFG.Blocks {
+		totalSuccessors += len(block.Successors)
+	}
+
+	maxDepth := 0
+	for _, depth := range depths {
+		if depth > maxDepth {
+			maxDepth = depth
+		}
+	}
+	
+	avgBranching := 0.0
+	if len(progCFG.Blocks) > 0 {
+		avgBranching = float64(totalSuccessors) / float64(len(progCFG.Blocks))
+	}
+
+
+	metrics := CFGMetrics{
+		MaxDepth: maxDepth,
+		AvgBranching: math.Round(avgBranching*10)/10, // Round for cleaner output
+	}
+
+	// 2. Calculate Hotspots (Per-Block Score)
+	hotspots := calculateHotspots(progCFG, depths)
+
+	return metrics, hotspots
 }
 
-const (
-	wALU        = 1.0
-	wMove       = 0.5
-	wLoadStore  = 2.0
-	wCall       = 4.0
-	wCondJump   = 3.0
-	wUncondJump = 2.0
-	wExit       = 0.5
+// calculateDepths runs a BFS from the entry block to determine the distance (depth) of each block.
+func calculateDepths(progCFG *CFG) map[int]int {
+	// ... (Implementation of BFS from Complexity.go) ...
+    // Note: Use a standard Breadth-First Search (BFS) implementation here to find shortest path to each block
+    // to determine MaxDepth. This implementation is standard.
+    
+    depths := make(map[int]int)
+	if progCFG.Entry == nil {
+		return depths
+	}
+	
+	queue := []*BasicBlock{progCFG.Entry}
+	depths[progCFG.Entry.ID] = 0
 
-	wLoopHeader = 10.0
-	wLoopBody   = 2.0
+	// Use map for visited status
+	visited := make(map[int]bool)
+	visited[progCFG.Entry.ID] = true
 
-	wMultiSucc = 3.0
-	wDense     = 1.5
-)
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
 
-func ScoreProgram(cfg *CFG, loops []LoopInfo) ProgramScore {
-	loopHeaders := map[int]bool{}
-	loopBlocks := map[int]bool{}
-
-	for _, l := range loops {
-		loopHeaders[l.Header] = true
-		for _, b := range l.Blocks {
-			loopBlocks[b] = true
+		currentDepth := depths[current.ID]
+		
+		for _, succ := range current.Successors {
+			// If not visited, set depth and add to queue
+			if !visited[succ.ID] {
+				visited[succ.ID] = true
+				depths[succ.ID] = currentDepth + 1
+				queue = append(queue, succ)
+			} else {
+                // If already visited, it means we found a path, but BFS guarantees shortest path
+                // However, for MaxDepth calculation, we might need a modified DFS if true longest path is required.
+                // For simplicity and common CFG analysis, BFS/shortest path is acceptable.
+            }
 		}
 	}
+	return depths
+}
 
-	var scores []BlockScore
-	var total float64
+// calculateHotspots calculates a per-block complexity score and ranks the top blocks.
+// (Section 5.7, C2)
+func calculateHotspots(progCFG *CFG, depths map[int]int) []BlockComplexity {
+	complexities := make([]BlockComplexity, len(progCFG.Blocks))
+	loopHeaderMap := make(map[int]bool)
 
-	for _, blk := range cfg.Blocks {
-
-		bs := BlockScore{
-			BlockID:      blk.ID,
-			Insns:        len(blk.Instructions),
-			Successors:   blk.Successors,
-			IsLoopHeader: loopHeaders[blk.ID],
-			IsLoopBlock:  loopBlocks[blk.ID],
-		}
-
-		var s float64
-
-		for _, ins := range blk.Instructions {
-
-			// ----------------------------
-			// Helper calls
-			// ----------------------------
-			if ins.IsHelperCall() {
-				s += wCall
-				s += float64(helperCost[int(ins.Imm)])
-				bs.Helpers++
-				continue
-			}
-
-			// ----------------------------
-			// Jumps
-			// ----------------------------
-			if ins.IsJump() {
-				if ins.Opcode == 0x05 {
-					s += wUncondJump
-				} else {
-					s += wCondJump
-				}
-				bs.Jumps++
-				continue
-			}
-
-			// ----------------------------
-			// Exit
-			// ----------------------------
-			if ins.IsExit() {
-				s += wExit
-				continue
-			}
-
-			// ----------------------------
-			// MOV (0xb0 - 0xbf)
-			// ----------------------------
-			if (ins.Opcode & 0xf0) == 0xb0 {
-				s += wMove
-				continue
-			}
-
-			// ----------------------------
-			// Load/store class:
-			// 0x00 (ld), 0x01 (ldx), 0x02/03 (st/stx)
-			// ----------------------------
-			class := ins.Opcode & 0x07
-			if class == 0x00 || class == 0x01 || class == 0x02 || class == 0x03 {
-				s += wLoadStore
-				continue
-			}
-
-			// ----------------------------
-			// Everything else = ALU
-			// ----------------------------
-			s += wALU
-		}
-
-		// Loop penalties
-		if bs.IsLoopHeader {
-			s += wLoopHeader
-		}
-		if bs.IsLoopBlock && !bs.IsLoopHeader {
-			s += wLoopBody
-		}
-
-		// Multi-successor block penalty
-		if len(bs.Successors) > 1 {
-			s += wMultiSucc
-		}
-
-		// Density penalty
-		density := float64(bs.Insns) / float64(len(bs.Successors)+1)
-		s += density * wDense
-
-		bs.Score = math.Round(s*100) / 100
-		total += bs.Score
-		scores = append(scores, bs)
+	for _, edge := range progCFG.BackEdges {
+		loopHeaderMap[edge.To.ID] = true
 	}
 
-	prediction := "LIKELY PASS"
-	if total > 80 {
-		prediction = "LIKELY FAIL"
-	} else if total > 50 {
-		prediction = "BORDERLINE"
+	for i, block := range progCFG.Blocks {
+		bc := BlockComplexity{
+			Block: block,
+			// Offsets are in bytes, divide by 8 for instruction number
+			OffsetRange: fmt.Sprintf("%d-%d", block.StartOffset/8, block.EndOffset/8),
+			InsnCount: len(block.Instructions),
+			SuccessorCount: len(block.Successors),
+			IsLoopHeader: loopHeaderMap[block.ID],
+			Depth: depths[block.ID],
+		}
+		
+		// Per-Block Complexity Formula (Heuristic)
+		score := 0.0
+		
+		// 1. Instruction count (0.5 point per instruction)
+		score += float64(bc.InsnCount) * 0.5
+		
+		// 2. Branching factor (5.0 points per successor over 1)
+		if bc.SuccessorCount > 1 {
+			score += float64(bc.SuccessorCount) * 5.0
+		}
+		
+		// 3. Loop contribution (20.0 points for loop headers)
+		if bc.IsLoopHeader {
+			score += 20.0
+			bc.Reason = "Loop header (source of back-edge)"
+		}
+
+		// 4. Depth contribution (2.0 points per depth level)
+		score += float64(bc.Depth) * 2.0
+		if bc.Depth > 8 { 
+			bc.Reason = "Deep nesting/control path (depth " + fmt.Sprintf("%d)", bc.Depth)
+		} else if bc.Reason == "" {
+			bc.Reason = fmt.Sprintf("High instruction count (%d insns)", bc.InsnCount)
+		}
+		
+		bc.ComplexityScore = math.Round(score*10)/10 // Round to 1 decimal
+		complexities[i] = bc
+	}
+	
+	// Sort by complexity score descending (Hotspot Ranking)
+	sort.Slice(complexities, func(i, j int) bool {
+		return complexities[i].ComplexityScore > complexities[j].ComplexityScore
+	})
+	
+	// Return top 10 hotspots (or up to 50 blocks) with a minimum score
+	hotspots := make([]BlockComplexity, 0)
+	for i, c := range complexities {
+		if c.ComplexityScore < 5.0 || i >= 10 {
+			break
+		}
+		hotspots = append(hotspots, c)
 	}
 
-	return ProgramScore{
-		TotalScore: math.Round(total*100) / 100,
-		Blocks:     scores,
-		Prediction: prediction,
-	}
+	return hotspots
 }
