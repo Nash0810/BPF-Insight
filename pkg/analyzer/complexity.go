@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"math"
 	"time"
 	// Ensure these imports are correct for your project structure
@@ -90,26 +91,20 @@ func Analyze(filePath string, insts []asm.Instruction, progCFG *cfg.CFG, profile
 		}
 	}
 
-	// 2. Run Rule Engine (Verifier) - Your implemented feature
-	vReport, err := verify.RunVerification(progCFG, profileName)
-	if err != nil {
-		return nil, err
+	// 2. Run Rule Engine (Verifier)
+	loops := cfg.DetectLoops(progCFG)
+	
+	// Convert []*BasicBlock to []BasicBlock for VerifyProgram
+	blocks := make([]cfg.BasicBlock, len(progCFG.Blocks))
+	for i, blk := range progCFG.Blocks {
+		blocks[i] = *blk
 	}
 	
-	// Convert verify.Violation to analyzer.Recommendation
-	report.Recommendations = make([]Recommendation, len(vReport.Violations))
-	report.RulePenalty = calculateRulePenalty(vReport.Violations)
-
-	for i, v := range vReport.Violations {
-		report.Recommendations[i] = Recommendation{
-			Pattern: v.RuleName,
-			Severity: v.Severity.String(),
-			Location: v.Location,
-			Issue: v.Issue,
-			Suggestion: v.Suggestion,
-			Priority: v.Severity.Priority(),
-		}
-	}
+	vReport := verify.VerifyProgram(blocks, loops)
+	
+	// Convert verify.VerifyOutput to analyzer.Recommendation
+	report.Recommendations = convertVerifyOutputToRecommendations(vReport, progCFG)
+	report.RulePenalty = calculateRulePenaltyFromWarnings(vReport)
 
 	// 3. Calculate Final Total Score (I3 Integration)
 	report.TotalScore, report.CFGScore = calculateTotalScore(report)
@@ -124,33 +119,59 @@ func Analyze(filePath string, insts []asm.Instruction, progCFG *cfg.CFG, profile
 func calculateHelperCalls(insts []asm.Instruction) int {
 	count := 0
 	for _, ins := range insts {
-		if ins.OpCode.IsLoadStore() || ins.OpCode.IsArithmetic() || ins.OpCode.IsJump() {
-			continue
-		}
-		// BPF_CALL is 0x85
-		if ins.OpCode.Code() == 0x85 { 
+		// BPF_CALL is opcode 0x85
+		// Class = JMP (0x05), upper bits = 0x80
+		opcode := uint8(ins.OpCode)
+		if opcode == 0x85 {
 			count++
 		}
 	}
 	return count
 }
 
-// calculateRulePenalty aggregates penalty points based on rule severity.
-func calculateRulePenalty(violations []verify.Violation) float64 {
+// calculateRulePenaltyFromWarnings aggregates penalty points based on warnings.
+func calculateRulePenaltyFromWarnings(vReport verify.VerifyOutput) float64 {
 	penalty := 0.0
-	for _, v := range violations {
-		// Penalties based on severity for integration with 0-100 score
-		switch v.Severity {
-		case verify.High:
-			penalty += 15.0
-		case verify.Medium:
-			penalty += 8.0
-		case verify.Low:
-			penalty += 2.0
-		}
-	}
+	
+	// Block warnings contribute to penalty
+	penalty += float64(len(vReport.BlockWarnings)) * 3.0
+	
+	// Program warnings contribute more
+	penalty += float64(len(vReport.ProgramWarnings)) * 5.0
+	
 	// Cap rule penalty at 40 points (Section 3.2, Factor 1)
 	return math.Min(penalty, 40.0) 
+}
+
+// convertVerifyOutputToRecommendations converts verify.VerifyOutput to analyzer.Recommendations
+func convertVerifyOutputToRecommendations(vReport verify.VerifyOutput, progCFG *cfg.CFG) []Recommendation {
+	var recommendations []Recommendation
+	
+	// Convert block warnings
+	for _, bw := range vReport.BlockWarnings {
+		recommendations = append(recommendations, Recommendation{
+			Pattern:    "block_warning",
+			Severity:   "medium",
+			Location:   fmt.Sprintf("Block %d", bw.BlockID),
+			Issue:      bw.Message,
+			Suggestion: "Review block for potential verifier issues",
+			Priority:   2,
+		})
+	}
+	
+	// Convert program warnings
+	for _, pw := range vReport.ProgramWarnings {
+		recommendations = append(recommendations, Recommendation{
+			Pattern:    "program_warning",
+			Severity:   "high",
+			Location:   "Program-level",
+			Issue:      pw,
+			Suggestion: "Review program structure for potential verifier issues",
+			Priority:   3,
+		})
+	}
+	
+	return recommendations
 }
 
 // calculateTotalScore implements the final composite score formula.
