@@ -54,7 +54,6 @@ func (progCFG *CFG) GenerateDOT(scoreMap HotspotMap) string {
 	// Edge definitions
 	for _, edge := range progCFG.Edges {
 		style := ""
-		color := "black"
 		label := string(edge.Type)
 	
 		if edge.Type == EdgeBackEdge {

@@ -74,7 +74,6 @@ func BuildBasicBlocks(insns []parser.Instruction) []*BasicBlock {
     // Construct blocks with proper offsets
     var blocks []*BasicBlock
     cur := &BasicBlock{ID: 0, StartOffset: 0}
-    blockStartIdx := 0
 
     for i, ins := range insns {
         if leaders[i] && len(cur.Instructions) > 0 {
@@ -83,7 +82,6 @@ func BuildBasicBlocks(insns []parser.Instruction) []*BasicBlock {
             blocks = append(blocks, cur)
             // Start new block
             cur = &BasicBlock{ID: len(blocks), StartOffset: i * 8}
-            blockStartIdx = i
         }
         cur.Instructions = append(cur.Instructions, ins)
     }
@@ -116,11 +114,9 @@ func BuildCFG(blocks []*BasicBlock) *CFG {
     // Map: instruction offset (byte) → block
     instToBlock := make(map[int]*BasicBlock)
     for _, blk := range blocks {
-        for _, ins := range blk.Instructions {
-            // Use instruction offset in bytes
-            offset := (blk.StartOffset / 8) * 8 // Approximate, but works for mapping
-            instToBlock[offset] = blk
-        }
+        // Use instruction offset in bytes
+        offset := (blk.StartOffset / 8) * 8 // Approximate, but works for mapping
+        instToBlock[offset] = blk
     }
 
     // Build edges
