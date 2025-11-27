@@ -70,8 +70,6 @@ func (p *ELFParser) Parse() ([]byte, error) {
 // ParseELF extracts raw BPF bytecode and section name from ELF files.
 // Returns: (raw bytecode, section name, error)
 func ParseELF(filePath string) ([]byte, string, error) {
-	p := ELFParser{FilePath: filePath}
-	
 	f, err := os.Open(filePath)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to open ELF file: %w", err)
