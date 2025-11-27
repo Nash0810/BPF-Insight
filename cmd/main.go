@@ -16,6 +16,8 @@ func main() {
 	rootCmd.AddCommand(analyzeCmd)
 	rootCmd.AddCommand(cfgCmd)
 	rootCmd.AddCommand(visualizeCmd)
+	rootCmd.AddCommand(compareCmd)
+	rootCmd.AddCommand(batchCmd)
 
 	err := rootCmd.Execute()
 	if err != nil {

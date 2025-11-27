@@ -22,3 +22,10 @@ func PrintJSON(data interface{}) {
 func MarshalJSON(data interface{}) ([]byte, error) {
 	return json.MarshalIndent(data, "", "  ")
 }
+
+// PrintJSONToFile prints any value as formatted JSON to the specified file
+func PrintJSONToFile(v interface{}, f *os.File) error {
+	enc := json.NewEncoder(f)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}

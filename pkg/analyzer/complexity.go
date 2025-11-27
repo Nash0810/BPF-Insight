@@ -200,3 +200,21 @@ func getPrediction(score float64) string {
 		return "WILL_FAIL"
 	}
 }
+
+// BatchResult represents the analysis result for a single file in batch processing.
+type BatchResult struct {
+	File       string  `json:"file"`
+	Score      float64 `json:"score"`
+	Prediction string  `json:"prediction"`
+	Error      string  `json:"error,omitempty"`
+}
+
+// BatchReport contains the results of batch processing multiple files.
+type BatchReport struct {
+	TotalFiles int            `json:"total_files"`
+	Analyzed   int            `json:"analyzed"`
+	Errors     int            `json:"errors"`
+	Results    []BatchResult  `json:"results"`
+	HighRisk   []string       `json:"high_risk"`
+	AvgScore   float64        `json:"avg_score"`
+}

@@ -66,3 +66,61 @@ func (p *ELFParser) Parse() ([]byte, error) {
 
 	return data, nil
 }
+
+// ParseELF extracts raw BPF bytecode and section name from ELF files.
+// Returns: (raw bytecode, section name, error)
+func ParseELF(filePath string) ([]byte, string, error) {
+	p := ELFParser{FilePath: filePath}
+	
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to open ELF file: %w", err)
+	}
+	defer f.Close()
+
+	ef, err := elf.NewFile(f)
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid ELF file: %w", err)
+	}
+
+	// Candidate section names for eBPF code
+	sectionPrefixes := []string{
+		"xdp",
+		"tracepoint/",
+		"kprobe/",
+		"kretprobe/",
+		"raw_tracepoint/",
+		"socket",
+		".text",
+	}
+
+	var codeSection *elf.Section
+	var sectionName string
+
+	for _, sec := range ef.Sections {
+		secName := sec.Name
+
+		for _, prefix := range sectionPrefixes {
+			if strings.HasPrefix(secName, prefix) {
+				codeSection = sec
+				sectionName = secName
+				break
+			}
+		}
+		if codeSection != nil {
+			break
+		}
+	}
+
+	if codeSection == nil {
+		return nil, "", fmt.Errorf("no eBPF program section found in ELF file: %s", filePath)
+	}
+
+	// Read eBPF bytecode
+	data, err := codeSection.Data()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read section data: %w", err)
+	}
+
+	return data, sectionName, nil
+}

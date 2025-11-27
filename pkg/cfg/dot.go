@@ -30,7 +30,7 @@ func (progCFG *CFG) GenerateDOT(scoreMap HotspotMap) string {
 	// Node definitions
 	for _, block := range progCFG.Blocks {
 		score := scoreMap[block.ID]
-		if score == 0 && block.ID == progCFG.Entry.ID {
+		if score == 0 && progCFG.Entry != nil && block.ID == progCFG.Entry.ID {
 			score = 0.1 // Ensure entry block has a score, even if minimal
 		}
 		color := getBlockColor(score)

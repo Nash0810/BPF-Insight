@@ -125,3 +125,7 @@ validation_results.txt
 # Markdown processor temp files
 *.md.tmp
 *.md.bak
+
+
+
+plan.txt

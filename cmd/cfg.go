@@ -42,8 +42,16 @@ var cfgCmd = &cobra.Command{
         for _, b := range graph.Blocks {
             fmt.Printf("Block B%d:\n", b.ID)
             fmt.Printf("  Instructions: %d\n", len(b.Instructions))
-            fmt.Printf("  Successors: %v\n", b.Successors)
-            fmt.Printf("  Predecessors: %v\n\n", b.Predecessors)
+            succIDs := make([]int, len(b.Successors))
+            for i, s := range b.Successors {
+                succIDs[i] = s.ID
+            }
+            predIDs := make([]int, len(b.Predecessors))
+            for i, p := range b.Predecessors {
+                predIDs[i] = p.ID
+            }
+            fmt.Printf("  Successors: %v\n", succIDs)
+            fmt.Printf("  Predecessors: %v\n\n", predIDs)
         }
 
         if len(loops) > 0 {

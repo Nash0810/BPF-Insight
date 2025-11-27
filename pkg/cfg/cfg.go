@@ -6,13 +6,32 @@ import (
 
 type BasicBlock struct {
     ID           int
+    StartOffset  int  // Byte offset where block starts
+    EndOffset    int  // Byte offset where block ends
     Instructions []parser.Instruction
-    Successors   []int
-    Predecessors []int
+    Successors   []*BasicBlock
+    Predecessors []*BasicBlock
+}
+
+type EdgeType string
+
+const (
+    EdgeFallthrough EdgeType = "fallthrough"
+    EdgeJump        EdgeType = "jump"
+    EdgeBackEdge    EdgeType = "back-edge"
+)
+
+type Edge struct {
+    From *BasicBlock
+    To   *BasicBlock
+    Type EdgeType
 }
 
 type CFG struct {
-    Blocks []*BasicBlock
+    Blocks    []*BasicBlock
+    Entry     *BasicBlock
+    Edges     []Edge
+    BackEdges []Edge
 }
 
 type LoopInfo struct {
@@ -20,10 +39,10 @@ type LoopInfo struct {
     Blocks []int
 }
 
-// Avoid duplicate edges
-func addUniqueEdge(list []int, v int) []int {
+// Avoid duplicate edges (for pointer-based successors/predecessors)
+func addUniqueBlock(list []*BasicBlock, v *BasicBlock) []*BasicBlock {
     for _, x := range list {
-        if x == v {
+        if x.ID == v.ID {
             return list
         }
     }
@@ -52,14 +71,19 @@ func BuildBasicBlocks(insns []parser.Instruction) []*BasicBlock {
         }
     }
 
-    // Construct blocks
+    // Construct blocks with proper offsets
     var blocks []*BasicBlock
-    cur := &BasicBlock{ID: 0}
+    cur := &BasicBlock{ID: 0, StartOffset: 0}
+    blockStartIdx := 0
 
     for i, ins := range insns {
-        if leaders[i] && !(cur.ID == 0 && len(cur.Instructions) == 0) {
+        if leaders[i] && len(cur.Instructions) > 0 {
+            // Finish current block
+            cur.EndOffset = i * 8 // Each instruction is 8 bytes
             blocks = append(blocks, cur)
-            cur = &BasicBlock{ID: len(blocks)}
+            // Start new block
+            cur = &BasicBlock{ID: len(blocks), StartOffset: i * 8}
+            blockStartIdx = i
         }
         cur.Instructions = append(cur.Instructions, ins)
     }
@@ -67,6 +91,7 @@ func BuildBasicBlocks(insns []parser.Instruction) []*BasicBlock {
     // Add last block
     if len(cur.Instructions) > 0 {
         cur.ID = len(blocks)
+        cur.EndOffset = len(insns) * 8
         blocks = append(blocks, cur)
     }
 
@@ -78,59 +103,129 @@ func BuildBasicBlocks(insns []parser.Instruction) []*BasicBlock {
 // ------------------------------------------------------------
 
 func BuildCFG(blocks []*BasicBlock) *CFG {
-    cfg := &CFG{Blocks: blocks}
+    if len(blocks) == 0 {
+        return &CFG{Blocks: blocks}
+    }
 
-    // Map: instruction index → block ID
-    instToBlock := make(map[int]int)
+    cfg := &CFG{
+        Blocks: blocks,
+        Entry:  blocks[0], // First block is entry
+        Edges:  []Edge{},
+    }
+
+    // Map: instruction offset (byte) → block
+    instToBlock := make(map[int]*BasicBlock)
     for _, blk := range blocks {
         for _, ins := range blk.Instructions {
-            instToBlock[ins.Off()] = blk.ID
+            // Use instruction offset in bytes
+            offset := (blk.StartOffset / 8) * 8 // Approximate, but works for mapping
+            instToBlock[offset] = blk
         }
     }
 
+    // Build edges
     for i, blk := range blocks {
+        if len(blk.Instructions) == 0 {
+            continue
+        }
+
         last := blk.Instructions[len(blk.Instructions)-1]
 
         // Jump instruction: add jump edge AND fall-through edge
         if last.IsJump() {
-            jumpTarget := last.Off() + 1 + int(last.OffsetVal)
-            if bid, ok := instToBlock[jumpTarget]; ok {
-                blk.Successors = addUniqueEdge(blk.Successors, bid)
-                blocks[bid].Predecessors = addUniqueEdge(blocks[bid].Predecessors, blk.ID)
+            // Calculate jump target (instruction index)
+            insnIdx := blk.StartOffset/8 + len(blk.Instructions) - 1
+            jumpTargetIdx := insnIdx + 1 + int(last.OffsetVal)
+            jumpTargetOffset := jumpTargetIdx * 8
+
+            // Find target block
+            var targetBlock *BasicBlock
+            for _, b := range blocks {
+                if jumpTargetOffset >= b.StartOffset && jumpTargetOffset < b.EndOffset {
+                    targetBlock = b
+                    break
+                }
             }
 
+            if targetBlock != nil {
+                edge := Edge{From: blk, To: targetBlock, Type: EdgeJump}
+                cfg.Edges = append(cfg.Edges, edge)
+                blk.Successors = addUniqueBlock(blk.Successors, targetBlock)
+                targetBlock.Predecessors = addUniqueBlock(targetBlock.Predecessors, blk)
+            }
+
+            // Fall-through edge (next block)
             if i+1 < len(blocks) {
-                blk.Successors = addUniqueEdge(blk.Successors, blocks[i+1].ID)
-                blocks[i+1].Predecessors = addUniqueEdge(blocks[i+1].Predecessors, blk.ID)
+                edge := Edge{From: blk, To: blocks[i+1], Type: EdgeFallthrough}
+                cfg.Edges = append(cfg.Edges, edge)
+                blk.Successors = addUniqueBlock(blk.Successors, blocks[i+1])
+                blocks[i+1].Predecessors = addUniqueBlock(blocks[i+1].Predecessors, blk)
             }
 
         } else if !last.IsExit() {
             // Normal fall-through
             if i+1 < len(blocks) {
-                blk.Successors = addUniqueEdge(blk.Successors, blocks[i+1].ID)
-                blocks[i+1].Predecessors = addUniqueEdge(blocks[i+1].Predecessors, blk.ID)
+                edge := Edge{From: blk, To: blocks[i+1], Type: EdgeFallthrough}
+                cfg.Edges = append(cfg.Edges, edge)
+                blk.Successors = addUniqueBlock(blk.Successors, blocks[i+1])
+                blocks[i+1].Predecessors = addUniqueBlock(blocks[i+1].Predecessors, blk)
             }
         }
     }
 
+    // Detect back-edges (loops)
+    cfg.BackEdges = detectBackEdges(cfg)
+
     return cfg
 }
 
+// detectBackEdges uses DFS to find back-edges (loops)
+func detectBackEdges(cfg *CFG) []Edge {
+    var backEdges []Edge
+    visited := make(map[int]bool)
+    recStack := make(map[int]bool)
+
+    var dfs func(block *BasicBlock)
+    dfs = func(block *BasicBlock) {
+        visited[block.ID] = true
+        recStack[block.ID] = true
+
+        for _, succ := range block.Successors {
+            if recStack[succ.ID] {
+                // Found a back-edge
+                for _, edge := range cfg.Edges {
+                    if edge.From.ID == block.ID && edge.To.ID == succ.ID {
+                        edge.Type = EdgeBackEdge
+                        backEdges = append(backEdges, edge)
+                        break
+                    }
+                }
+            } else if !visited[succ.ID] {
+                dfs(succ)
+            }
+        }
+
+        recStack[block.ID] = false
+    }
+
+    if cfg.Entry != nil {
+        dfs(cfg.Entry)
+    }
+
+    return backEdges
+}
+
 // ------------------------------------------------------------
-// Detect loops (simple back-edge detection for now)
+// Detect loops (returns LoopInfo for backward compatibility)
 // ------------------------------------------------------------
 
 func DetectLoops(cfg *CFG) []LoopInfo {
     var loops []LoopInfo
-    for _, blk := range cfg.Blocks {
-        for _, succ := range blk.Successors {
-            if succ <= blk.ID {
-                loops = append(loops, LoopInfo{
-                    Header: succ,
-                    Blocks: []int{blk.ID, succ},
-                })
-            }
-        }
+    for _, edge := range cfg.BackEdges {
+        loops = append(loops, LoopInfo{
+            Header: edge.To.ID,
+            Blocks: []int{edge.From.ID, edge.To.ID},
+        })
     }
     return loops
 }

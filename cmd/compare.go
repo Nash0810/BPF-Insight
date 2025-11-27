@@ -11,7 +11,8 @@ import (
 	"github.com/Nash0810/BPF-Insight/pkg/utils"
 )
 
-// Global variable in cmd/root.go: var profileName string
+// Global variable for profile name (can be set via flag in future)
+var profileName string
 
 var compareCmd = &cobra.Command{
 	Use:   "compare <before.o> <after.o>",
@@ -67,10 +68,12 @@ func analyzeSingleFile(filePath string) (*analyzer.ComplexityReport, error) {
 		return nil, err
 	}
 
-	progCFG, err := cfg.BuildCFG(insts)
-	if err != nil {
-		return nil, err
-	}
+	// Convert to asm.Instruction for analyzer
+	asmInsts := parser.ConvertToASM(insts)
+
+	// Build CFG
+	blocks := cfg.BuildBasicBlocks(insts)
+	progCFG := cfg.BuildCFG(blocks)
 
 	// Use the global profile name if it was set, otherwise default
 	profile := "default"
@@ -78,7 +81,7 @@ func analyzeSingleFile(filePath string) (*analyzer.ComplexityReport, error) {
 		profile = profileName
 	}
 	
-	report, err := analyzer.Analyze(filePath, insts, progCFG, profile)
+	report, err := analyzer.Analyze(filePath, asmInsts, progCFG, profile)
 	if err != nil {
 		return nil, err
 	}
