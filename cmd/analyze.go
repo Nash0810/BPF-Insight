@@ -1,18 +1,15 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+	"sort"
 	"os"
 	"path/filepath"
-	"sort"
-
 	"github.com/spf13/cobra"
-
 	"github.com/Nash0810/BPF-Insight/pkg/analyzer"
 	"github.com/Nash0810/BPF-Insight/pkg/cfg"
-	"github.com/Nash0810/BPF-Insight/pkg/parser"
 	"github.com/Nash0810/BPF-Insight/pkg/utils"
+// removed stray parenthesis
 )
 
 var (
@@ -48,7 +45,8 @@ var analyzeCmd = &cobra.Command{
 
 		// Output
 		if outputJSON {
-			return utils.PrintJSON(report)
+			utils.PrintJSON(report)
+			return nil
 		}
 
 		// Text output

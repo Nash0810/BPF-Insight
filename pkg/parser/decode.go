@@ -1,26 +1,11 @@
 package parser
 
 import (
-	"fmt"
+	"github.com/cilium/ebpf/asm"
 )
 
-// raw is a flat byte slice containing all instructions
-// We split it into 8-byte BPF instructions
-func DecodeInstructions(raw []byte) ([]Instruction, error) {
-
-	if len(raw)%8 != 0 {
-		return nil, fmt.Errorf("instruction data is not aligned to 8 bytes")
-	}
-
-	insns := []Instruction{}
-
-	for i := 0; i < len(raw); i += 8 {
-		ins, err := DecodeInstruction(raw[i : i+8])
-		if err != nil {
-			return nil, fmt.Errorf("decode error at %d: %w", i/8, err)
-		}
-		insns = append(insns, ins)
-	}
-
-	return insns, nil
+// DecodeInstructions decodes raw eBPF bytecode into asm.Instruction objects.
+// This uses cilium/ebpf's official BPF decoder, matching kernel semantics.
+func DecodeInstructions(raw []byte) ([]asm.Instruction, error) {
+	return asm.Parse(raw, asm.LE)
 }

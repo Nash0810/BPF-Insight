@@ -6,11 +6,8 @@ import (
     "os/exec"
     "path/filepath"
     "strings"
-
     "github.com/spf13/cobra"
-    "github.com/Nash0810/BPF-Insight/pkg/parser"
     "github.com/Nash0810/BPF-Insight/pkg/cfg"
-    "github.com/Nash0810/BPF-Insight/pkg/analyzer"
 )
 
 var (

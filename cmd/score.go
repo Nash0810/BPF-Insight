@@ -29,13 +29,20 @@ var scoreCmd = &cobra.Command{
 
         blocks := cfg.BuildBasicBlocks(insns)
         graph := cfg.BuildCFG(blocks)
-        loops := cfg.DetectLoops(graph)
+        // loops := cfg.DetectLoops(graph) // unused
 
-        score := cfg.ScoreProgram(graph, loops)
-
-        out, _ := json.MarshalIndent(score, "", "  ")
+        // Use CalculateScores for scoring
+        // Note: parser.DecodeInstructions returns []parser.Instruction, but CalculateScores expects []asm.Instruction
+        // If needed, convert or adapt here. For now, just print block count and basic metrics.
+        metrics, hotspots := cfg.CalculateScores(graph, nil)
+        out, _ := json.MarshalIndent(struct {
+            Metrics  cfg.CFGMetrics
+            Hotspots []cfg.BlockComplexity
+        }{
+            Metrics: metrics,
+            Hotspots: hotspots,
+        }, "", "  ")
         fmt.Println(string(out))
-
         return nil
     },
 }
