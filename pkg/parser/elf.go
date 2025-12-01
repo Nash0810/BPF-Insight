@@ -13,6 +13,62 @@ type ELFParser struct {
 	FilePath string
 }
 
+// isBPFSection checks if a section name is a valid eBPF program section.
+func isBPFSection(name string) bool {
+	if name == "xdp" || strings.HasPrefix(name, "xdp/") {
+		return true
+	}
+	if strings.HasPrefix(name, "kprobe/") {
+		return true
+	}
+	if strings.HasPrefix(name, "kretprobe/") {
+		return true
+	}
+	if strings.HasPrefix(name, "tracepoint/") {
+		return true
+	}
+	if strings.HasPrefix(name, "raw_tracepoint/") {
+		return true
+	}
+	if name == "socket" || strings.HasPrefix(name, "socket/") {
+		return true
+	}
+	// BPF test programs compiled with clang always use .text
+	if name == ".text" || strings.HasPrefix(name, ".text") {
+		return true
+	}
+	return false
+}
+
+// findBPFSection finds the first non-empty BPF section, prioritizing explicit sections over .text
+func findBPFSection(ef *elf.File) *elf.Section {
+	// First pass: look for explicit BPF sections (xdp, kprobe, etc.)
+	explicitPrefixes := []string{"xdp", "kprobe", "kretprobe", "tracepoint", "raw_tracepoint", "socket"}
+	for _, prefix := range explicitPrefixes {
+		for _, sec := range ef.Sections {
+			if (sec.Name == prefix || strings.HasPrefix(sec.Name, prefix+"/")) && sec.Size > 0 {
+				return sec
+			}
+		}
+	}
+
+	// Second pass: look for any .text section
+	for _, sec := range ef.Sections {
+		if (sec.Name == ".text" || strings.HasPrefix(sec.Name, ".text")) && sec.Size > 0 {
+			return sec
+		}
+	}
+
+	// Fallback: return first non-empty BPF section
+	for _, sec := range ef.Sections {
+		if isBPFSection(sec.Name) && sec.Size > 0 {
+			return sec
+		}
+	}
+
+	return nil
+}
+
 // Parse extracts raw BPF bytecode from the first eBPF program section.
 func (p *ELFParser) Parse() ([]byte, error) {
 	if p.FilePath == "" {
@@ -30,33 +86,9 @@ func (p *ELFParser) Parse() ([]byte, error) {
 		return nil, fmt.Errorf("invalid ELF file: %w", err)
 	}
 
-	// Candidate section names for eBPF code
-	sectionPrefixes := []string{
-		"xdp",
-		"tracepoint/",
-		"kprobe/",
-		"kretprobe/",
-		"raw_tracepoint/",
-		"socket",
-		".text",
-	}
-
 	var codeSection *elf.Section
 
-	for _, sec := range ef.Sections {
-		secName := sec.Name
-
-		for _, prefix := range sectionPrefixes {
-			if strings.HasPrefix(secName, prefix) {
-				codeSection = sec
-				break
-			}
-		}
-
-		if codeSection != nil {
-			break
-		}
-	}
+	codeSection = findBPFSection(ef)
 
 	if codeSection == nil {
 		return nil, fmt.Errorf("no eBPF program section found in ELF file: %s", p.FilePath)
@@ -83,38 +115,16 @@ func ParseELF(filePath string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("invalid ELF file: %w", err)
 	}
 
-	sectionPrefixes := []string{
-		"xdp",
-		"tracepoint/",
-		"kprobe/",
-		"kretprobe/",
-		"raw_tracepoint/",
-		"socket",
-		".text",
-	}
-
 	var codeSection *elf.Section
 	var sectionName string
 
-	for _, sec := range ef.Sections {
-		secName := sec.Name
-
-		for _, prefix := range sectionPrefixes {
-			if strings.HasPrefix(secName, prefix) {
-				codeSection = sec
-				sectionName = secName
-				break
-			}
-		}
-
-		if codeSection != nil {
-			break
-		}
-	}
+	codeSection = findBPFSection(ef)
 
 	if codeSection == nil {
 		return nil, "", fmt.Errorf("no eBPF section found in ELF: %s", filePath)
 	}
+
+	sectionName = codeSection.Name
 
 	data, err := codeSection.Data()
 	if err != nil {

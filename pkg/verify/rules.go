@@ -35,11 +35,12 @@ func init() {
 	}
 
 	// 4. Write to R10
+	// Converted to program-level to increase severity impact
 	Rules["write_r10"] = &Rule{
-		Name:        "write_r10",
-		Description: "Detect writes to R10 (frame pointer)",
-		Enabled:     true,
-		BlockCheck:  ruleWriteR10,
+		Name:         "write_r10",
+		Description:  "Detect writes to R10 (frame pointer)",
+		Enabled:      true,
+		ProgramCheck: ruleWriteR10Program,
 	}
 
 	// 5. Map lookup without null-check
@@ -56,6 +57,30 @@ func init() {
 		Description:  "Detect map update without validating key",
 		Enabled:      true,
 		ProgramCheck: ruleMapUpdateNoKey,
+	}
+
+	// 8. Pointer bitwise/shift ops on pointer-like registers
+	Rules["pointer_bitwise_shift"] = &Rule{
+		Name:        "pointer_bitwise_shift",
+		Description: "Detect bitwise and shift operations on registers that may hold pointers",
+		Enabled:     true,
+		BlockCheck:  rulePointerBitwiseShift,
+	}
+
+	// 9. Unknown helper index
+	Rules["unknown_helper"] = &Rule{
+		Name:         "unknown_helper",
+		Description:  "Detect helper calls with unknown or unexpected helper indices",
+		Enabled:      true,
+		ProgramCheck: ruleUnknownHelper,
+	}
+
+	// 10. Missing BTF
+	Rules["missing_btf"] = &Rule{
+		Name:         "missing_btf",
+		Description:  "Detect absence of BTF data in ELF which may cause verifier to reject loads/funcs",
+		Enabled:      false, // disabled: needs ELF context not available in program-level checks
+		ProgramCheck: ruleMissingBTF,
 	}
 
 	// 7. Complexity / path explosion
@@ -100,7 +125,7 @@ func fmtmsg(s string, args ...interface{}) string {
 // 1. Pointer arithmetic
 // ------------------------------------------------------------
 // Detect ALU arithmetic on R10 (frame pointer)
-// 
+//
 // NOTE: Without register state tracking, we can only reliably detect
 // arithmetic on R10, which is ALWAYS a pointer and NEVER legally modified.
 // R1 (ctx pointer) may be overwritten with scalars, causing false positives.
@@ -125,7 +150,7 @@ func rulePointerArithmetic(block cfg.BasicBlock, ins parser.Instruction) []strin
 	// Any arithmetic on R10 is definitely illegal
 	if dst == 10 {
 		return []string{
-			"Pointer arithmetic on R10 (frame pointer)",
+			"CRITICAL: Pointer arithmetic on R10 (frame pointer)",
 		}
 	}
 
@@ -133,7 +158,7 @@ func rulePointerArithmetic(block cfg.BasicBlock, ins parser.Instruction) []strin
 	// e.g., add r1, r10 → trying to create derived pointer
 	if src == 10 {
 		return []string{
-			"Pointer arithmetic using R10 as source (frame pointer)",
+			"CRITICAL: Pointer arithmetic using R10 as source (frame pointer)",
 		}
 	}
 
@@ -223,12 +248,12 @@ func ruleStackVarOffset(block cfg.BasicBlock, ins parser.Instruction) []string {
 func ruleWriteR10(block cfg.BasicBlock, ins parser.Instruction) []string {
 	// ALU operations that modify R10 (add, sub, etc.)
 	if ins.IsALU() && !ins.IsMove() && ins.Dst() == 10 {
-		return []string{"Arithmetic on R10 detected (frame pointer must be read-only)"}
+		return []string{"CRITICAL: Arithmetic on R10 detected (frame pointer must be read-only)"}
 	}
 
 	// MOV operations that overwrite R10
 	if ins.IsMove() && ins.Dst() == 10 {
-		return []string{"Write to R10 detected (frame pointer is read-only)"}
+		return []string{"CRITICAL: Write to R10 detected (frame pointer is read-only)"}
 	}
 
 	return nil
@@ -266,7 +291,7 @@ func ruleMapLookupNoNull(blocks []cfg.BasicBlock) []string {
 
 			if !checked {
 				out = append(out,
-					fmtmsg("Block %d: Map lookup result used without null check", b.ID))
+					fmtmsg("MEDIUM: Block %d: Map lookup result used without null check", b.ID))
 			}
 		}
 	}
@@ -287,7 +312,7 @@ func ruleMapUpdateNoKey(blocks []cfg.BasicBlock) []string {
 			if ins.IsHelperCall() && ins.Imm == 2 {
 				// Heuristic warning - cannot verify R2 contents without state tracking
 				out = append(out,
-					fmtmsg("Block %d: Map update detected (ensure key in R2 is validated)", b.ID))
+					fmtmsg("MEDIUM: Block %d: Map update detected (ensure key in R2 is validated)", b.ID))
 			}
 		}
 	}
@@ -306,4 +331,90 @@ func ruleHighComplexity(blocks []cfg.BasicBlock) []string {
 		}
 	}
 	return out
+}
+
+// Pointer bitwise/shift detection
+// Flags ALU ops that include bitwise or shift on pointer-like registers
+func rulePointerBitwiseShift(block cfg.BasicBlock, ins parser.Instruction) []string {
+	if !ins.IsALU() || ins.IsMove() {
+		return nil
+	}
+
+	// Check if the operation is one that is unsafe on pointers (AND/OR/XOR/LSH/RSH)
+	if !ins.IsPtrArithmetic() {
+		return nil
+	}
+
+	dst := ins.Dst()
+	src := ins.Src()
+
+	// R10 is always frame pointer and must not be subject to bitwise/shift ops
+	if dst == 10 {
+		return []string{"CRITICAL: Bitwise/shift operation on R10 (frame pointer)"}
+	}
+	if src == 10 {
+		return []string{"CRITICAL: Bitwise/shift operation using R10 (frame pointer)"}
+	}
+
+	// Conservative: do not flag R1 (ctx ptr) to avoid false positives without state tracking
+	return nil
+}
+
+// Program-level aggregation for R10 writes — higher severity
+func ruleWriteR10Program(blocks []cfg.BasicBlock) []string {
+	out := []string{}
+	for _, b := range blocks {
+		for _, ins := range b.Instructions {
+			// Reuse the block-level detector
+			msgs := ruleWriteR10(b, ins)
+			for _, m := range msgs {
+				// Promote message to program-level critical entry
+				out = append(out, fmtmsg("CRITICAL: Block %d: %s", b.ID, m))
+			}
+		}
+	}
+	return out
+}
+
+// Unknown helper detection
+// Heuristic: flag helper indices not in a conservative whitelist.
+func ruleUnknownHelper(blocks []cfg.BasicBlock) []string {
+	out := []string{}
+
+	// Conservative whitelist of common helpers (kernel-dependent).
+	known := map[int]bool{
+		1:  true, // bpf_map_lookup_elem
+		2:  true, // bpf_map_update_elem
+		3:  true, // bpf_map_delete_elem
+		4:  true,
+		5:  true,
+		6:  true,
+		7:  true,
+		8:  true,
+		9:  true,
+		10: true,
+		11: true,
+		12: true,
+	}
+
+	for _, b := range blocks {
+		for _, ins := range b.Instructions {
+			if !ins.IsHelperCall() {
+				continue
+			}
+			hid := int(ins.Imm)
+			if !known[hid] {
+				out = append(out, fmtmsg("Block %d: Helper call with unknown index %d (imm=%d)", b.ID, hid, hid))
+			}
+		}
+	}
+
+	return out
+}
+
+// Missing BTF (placeholder)
+// We cannot reliably detect missing BTF here because `ProgramCheck` only receives blocks
+// which do not include ELF metadata. Keep as a no-op placeholder for future enhancements.
+func ruleMissingBTF(blocks []cfg.BasicBlock) []string {
+	return nil
 }

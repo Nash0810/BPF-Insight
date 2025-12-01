@@ -2,27 +2,28 @@ package main
 
 import (
 	"fmt"
-	"sort"
-	"os"
-	"path/filepath"
-	"github.com/spf13/cobra"
 	"github.com/Nash0810/BPF-Insight/pkg/analyzer"
 	"github.com/Nash0810/BPF-Insight/pkg/cfg"
 	"github.com/Nash0810/BPF-Insight/pkg/utils"
-// removed stray parenthesis
+	"github.com/spf13/cobra"
+	"os"
+	"path/filepath"
+	"sort"
+	// removed stray parenthesis
 )
 
 var (
-	outputJSON   bool
-	verbose      bool
-	showCFG      bool
-	outputDir    string
-	hotspotsNum  int
-	noViz        bool
+	outputJSON  bool
+	verbose     bool
+	showCFG     bool
+	outputDir   string
+	hotspotsNum int
+	noViz       bool
 )
 
 func init() {
 	analyzeCmd.Flags().BoolVarP(&outputJSON, "json", "j", false, "Output in JSON format")
+	analyzeCmd.Flags().BoolVarP(&outputJSON, "json-alt", "f", false, "Output in JSON format (alias)")
 	analyzeCmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Show detailed metrics")
 	analyzeCmd.Flags().BoolVar(&showCFG, "show-cfg", false, "Generate CFG visualization")
 	analyzeCmd.Flags().StringVarP(&outputDir, "output-dir", "o", "", "Directory for output files")

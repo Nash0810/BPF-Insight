@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"github.com/spf13/cobra"
 	"github.com/Nash0810/BPF-Insight/pkg/analyzer"
 	"github.com/Nash0810/BPF-Insight/pkg/utils"
+	"github.com/spf13/cobra"
+	"os"
+	"path/filepath"
 )
 
 var batchCmd = &cobra.Command{
@@ -219,4 +219,3 @@ func findFiles(directory string, recursive bool, pattern string) ([]string, erro
 
 	return files, nil
 }
-

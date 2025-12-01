@@ -1,7 +1,7 @@
 package cfg
 
 import (
-	"github.com/cilium/ebpf/asm"
+	"github.com/Nash0810/BPF-Insight/pkg/parser"
 )
 
 // ============================================================
@@ -12,7 +12,7 @@ type BasicBlock struct {
 	ID           int
 	StartOffset  int // byte offset
 	EndOffset    int // byte offset
-	Instructions []asm.Instruction
+	Instructions []parser.Instruction
 	Successors   []*BasicBlock
 	Predecessors []*BasicBlock
 }
@@ -64,7 +64,7 @@ func addUniqueBlock(list []*BasicBlock, v *BasicBlock) []*BasicBlock {
 // Basic Block Construction (Leader-based)
 // ============================================================
 
-func BuildBasicBlocks(insns []asm.Instruction) []*BasicBlock {
+func BuildBasicBlocks(insns []parser.Instruction) []*BasicBlock {
 	leaders := map[int]bool{0: true}
 
 	// Find block leaders using classic rules
@@ -72,7 +72,7 @@ func BuildBasicBlocks(insns []asm.Instruction) []*BasicBlock {
 
 		// Identify jump instructions
 		if isJump(ins) {
-			offset := int(ins.Offset)
+			offset := int(ins.OffsetVal)
 
 			target := i + 1 + offset
 			if target >= 0 && target < len(insns) {
@@ -117,12 +117,12 @@ func BuildBasicBlocks(insns []asm.Instruction) []*BasicBlock {
 // Helper: identify jumps & exit instructions
 // ============================================================
 
-func isJump(ins asm.Instruction) bool {
-	return ins.OpCode.Class() == asm.JumpClass
+func isJump(ins parser.Instruction) bool {
+	return ins.IsJump()
 }
 
-func isExit(ins asm.Instruction) bool {
-	return ins.OpCode == asm.Exit
+func isExit(ins parser.Instruction) bool {
+	return ins.IsExit()
 }
 
 // ============================================================
@@ -151,7 +151,7 @@ func BuildCFG(blocks []*BasicBlock) *CFG {
 		// Jump instruction
 		if isJump(last) && !isExit(last) {
 
-			jumpTargetIdx := insnIdx + 1 + int(last.Offset)
+			jumpTargetIdx := insnIdx + 1 + int(last.OffsetVal)
 			jumpTargetOffset := jumpTargetIdx * 8
 
 			// Find jump target block

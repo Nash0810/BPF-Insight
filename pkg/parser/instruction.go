@@ -11,6 +11,7 @@ type Instruction struct {
 	SrcReg    uint8
 	OffsetVal int16
 	Imm       int32
+	Imm64     int64 // full 64-bit immediate for LD_IMM64 (if present)
 	Raw       []byte
 }
 

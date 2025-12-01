@@ -8,13 +8,13 @@ import (
 
 // ComparisonReport holds the results of comparing two ComplexityReports.
 type ComparisonReport struct {
-	Before           *ComplexityReport `json:"before"`
-	After            *ComplexityReport `json:"after"`
-	ScoreDelta       float64           `json:"score_delta"`       // Positive = improvement (After score is lower)
+	Before           *ComplexityReport  `json:"before"`
+	After            *ComplexityReport  `json:"after"`
+	ScoreDelta       float64            `json:"score_delta"` // Positive = improvement (After score is lower)
 	MetricChanges    map[string]float64 `json:"metric_changes"`
-	ResolvedPatterns []Recommendation  `json:"resolved_patterns"`
-	NewPatterns      []Recommendation  `json:"new_patterns"`
-	Summary          string            `json:"summary"`
+	ResolvedPatterns []Recommendation   `json:"resolved_patterns"`
+	NewPatterns      []Recommendation   `json:"new_patterns"`
+	Summary          string             `json:"summary"`
 }
 
 // ComparePrograms analyzes two reports and generates a diff.
@@ -23,7 +23,7 @@ func ComparePrograms(beforeReport, afterReport *ComplexityReport) *ComparisonRep
 		Before: beforeReport,
 		After:  afterReport,
 		// Delta is Before - After. Positive value is an improvement (lower score after optimization)
-		ScoreDelta: math.Round((beforeReport.TotalScore - afterReport.TotalScore) * 10) / 10,
+		ScoreDelta:    math.Round((beforeReport.TotalScore-afterReport.TotalScore)*10) / 10,
 		MetricChanges: make(map[string]float64),
 	}
 
@@ -34,19 +34,18 @@ func ComparePrograms(beforeReport, afterReport *ComplexityReport) *ComparisonRep
 	report.MetricChanges["avg_branching"] = beforeReport.AvgBranching - afterReport.AvgBranching
 	report.MetricChanges["rule_penalty"] = beforeReport.RulePenalty - afterReport.RulePenalty
 
-
 	// Analyze Pattern Changes
 	beforeMap := make(map[string]Recommendation)
 	for _, r := range beforeReport.Recommendations {
 		// Use Pattern + Location as unique key for a specific violation
-		beforeMap[r.Pattern + r.Location] = r
+		beforeMap[r.Pattern+r.Location] = r
 	}
-	
+
 	afterMap := make(map[string]Recommendation)
 	for _, r := range afterReport.Recommendations {
-		afterMap[r.Pattern + r.Location] = r
+		afterMap[r.Pattern+r.Location] = r
 	}
-	
+
 	// Identify Resolved and New Patterns
 	for key, r := range beforeMap {
 		if _, exists := afterMap[key]; !exists {
@@ -79,7 +78,7 @@ func ComparePrograms(beforeReport, afterReport *ComplexityReport) *ComparisonRep
 // (Section 12.4)
 func PrintComparisonText(report *ComparisonReport) string {
 	var sb strings.Builder
-	
+
 	sb.WriteString("Comparative Analysis\n")
 	sb.WriteString("====================\n")
 	sb.WriteString(fmt.Sprintf("Before: %s\n", report.Before.FilePath))
@@ -89,7 +88,7 @@ func PrintComparisonText(report *ComparisonReport) string {
 	sb.WriteString("Complexity Scores:\n")
 	sb.WriteString(fmt.Sprintf("  Before: %.1f / 100 (%s)\n", report.Before.TotalScore, report.Before.Prediction))
 	sb.WriteString(fmt.Sprintf("  After:  %.1f / 100 (%s)\n", report.After.TotalScore, report.After.Prediction))
-	
+
 	deltaStr := "no change"
 	if report.ScoreDelta > 0 {
 		deltaStr = fmt.Sprintf("-%s%.1f (improvement)", "%", report.ScoreDelta)
@@ -108,13 +107,13 @@ func PrintComparisonText(report *ComparisonReport) string {
 			if beforeValFloat, ok := beforeVal.(float64); ok && beforeValFloat != 0 {
 				percent = delta / beforeValFloat * 100
 			}
-			
-			sb.WriteString(fmt.Sprintf("  %-20s %v -> %v (%.1f, %+.1f%%)\n", 
+
+			sb.WriteString(fmt.Sprintf("  %-20s %v -> %v (%.1f, %+.1f%%)\n",
 				formatMetricKey(key), beforeVal, afterVal, delta, percent))
 		}
 	}
 	sb.WriteString("\n")
-	
+
 	sb.WriteString("Pattern Analysis:\n")
 	if len(report.ResolvedPatterns) > 0 {
 		sb.WriteString("  ✓ Resolved Issues:\n")
@@ -141,22 +140,34 @@ func PrintComparisonText(report *ComparisonReport) string {
 // Utility functions for text output formatting
 func formatMetricKey(key string) string {
 	switch key {
-	case "instructions": return "Instructions"
-	case "loops": return "Loops"
-	case "max_depth": return "Max Depth"
-	case "avg_branching": return "Avg Branching"
-	case "rule_penalty": return "Rule Penalty"
-	default: return key
+	case "instructions":
+		return "Instructions"
+	case "loops":
+		return "Loops"
+	case "max_depth":
+		return "Max Depth"
+	case "avg_branching":
+		return "Avg Branching"
+	case "rule_penalty":
+		return "Rule Penalty"
+	default:
+		return key
 	}
 }
 
 func getMetricValue(r *ComplexityReport, key string) interface{} {
 	switch key {
-	case "instructions": return r.InstructionCount
-	case "loops": return r.LoopCount
-	case "max_depth": return r.MaxDepth
-	case "avg_branching": return math.Round(r.AvgBranching * 10) / 10
-	case "rule_penalty": return math.Round(r.RulePenalty * 10) / 10
-	default: return 0.0
+	case "instructions":
+		return r.InstructionCount
+	case "loops":
+		return r.LoopCount
+	case "max_depth":
+		return r.MaxDepth
+	case "avg_branching":
+		return math.Round(r.AvgBranching*10) / 10
+	case "rule_penalty":
+		return math.Round(r.RulePenalty*10) / 10
+	default:
+		return 0.0
 	}
 }

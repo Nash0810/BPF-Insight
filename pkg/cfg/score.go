@@ -42,16 +42,15 @@ func CalculateScores(progCFG *CFG, insts []asm.Instruction) (CFGMetrics, []Block
 			maxDepth = depth
 		}
 	}
-	
+
 	avgBranching := 0.0
 	if len(progCFG.Blocks) > 0 {
 		avgBranching = float64(totalSuccessors) / float64(len(progCFG.Blocks))
 	}
 
-
 	metrics := CFGMetrics{
-		MaxDepth: maxDepth,
-		AvgBranching: math.Round(avgBranching*10)/10, // Round for cleaner output
+		MaxDepth:     maxDepth,
+		AvgBranching: math.Round(avgBranching*10) / 10, // Round for cleaner output
 	}
 
 	// 2. Calculate Hotspots (Per-Block Score)
@@ -63,14 +62,14 @@ func CalculateScores(progCFG *CFG, insts []asm.Instruction) (CFGMetrics, []Block
 // calculateDepths runs a BFS from the entry block to determine the distance (depth) of each block.
 func calculateDepths(progCFG *CFG) map[int]int {
 	// ... (Implementation of BFS from Complexity.go) ...
-    // Note: Use a standard Breadth-First Search (BFS) implementation here to find shortest path to each block
-    // to determine MaxDepth. This implementation is standard.
-    
-    depths := make(map[int]int)
+	// Note: Use a standard Breadth-First Search (BFS) implementation here to find shortest path to each block
+	// to determine MaxDepth. This implementation is standard.
+
+	depths := make(map[int]int)
 	if progCFG.Entry == nil {
 		return depths
 	}
-	
+
 	queue := []*BasicBlock{progCFG.Entry}
 	depths[progCFG.Entry.ID] = 0
 
@@ -83,7 +82,7 @@ func calculateDepths(progCFG *CFG) map[int]int {
 		queue = queue[1:]
 
 		currentDepth := depths[current.ID]
-		
+
 		for _, succ := range current.Successors {
 			// If not visited, set depth and add to queue
 			if !visited[succ.ID] {
@@ -91,10 +90,10 @@ func calculateDepths(progCFG *CFG) map[int]int {
 				depths[succ.ID] = currentDepth + 1
 				queue = append(queue, succ)
 			} else {
-                // If already visited, it means we found a path, but BFS guarantees shortest path
-                // However, for MaxDepth calculation, we might need a modified DFS if true longest path is required.
-                // For simplicity and common CFG analysis, BFS/shortest path is acceptable.
-            }
+				// If already visited, it means we found a path, but BFS guarantees shortest path
+				// However, for MaxDepth calculation, we might need a modified DFS if true longest path is required.
+				// For simplicity and common CFG analysis, BFS/shortest path is acceptable.
+			}
 		}
 	}
 	return depths
@@ -114,24 +113,24 @@ func calculateHotspots(progCFG *CFG, depths map[int]int) []BlockComplexity {
 		bc := BlockComplexity{
 			Block: block,
 			// Offsets are in bytes, divide by 8 for instruction number
-			OffsetRange: fmt.Sprintf("%d-%d", block.StartOffset/8, block.EndOffset/8),
-			InsnCount: len(block.Instructions),
+			OffsetRange:    fmt.Sprintf("%d-%d", block.StartOffset/8, block.EndOffset/8),
+			InsnCount:      len(block.Instructions),
 			SuccessorCount: len(block.Successors),
-			IsLoopHeader: loopHeaderMap[block.ID],
-			Depth: depths[block.ID],
+			IsLoopHeader:   loopHeaderMap[block.ID],
+			Depth:          depths[block.ID],
 		}
-		
+
 		// Per-Block Complexity Formula (Heuristic)
 		score := 0.0
-		
+
 		// 1. Instruction count (0.5 point per instruction)
 		score += float64(bc.InsnCount) * 0.5
-		
+
 		// 2. Branching factor (5.0 points per successor over 1)
 		if bc.SuccessorCount > 1 {
 			score += float64(bc.SuccessorCount) * 5.0
 		}
-		
+
 		// 3. Loop contribution (20.0 points for loop headers)
 		if bc.IsLoopHeader {
 			score += 20.0
@@ -140,21 +139,21 @@ func calculateHotspots(progCFG *CFG, depths map[int]int) []BlockComplexity {
 
 		// 4. Depth contribution (2.0 points per depth level)
 		score += float64(bc.Depth) * 2.0
-		if bc.Depth > 8 { 
+		if bc.Depth > 8 {
 			bc.Reason = "Deep nesting/control path (depth " + fmt.Sprintf("%d)", bc.Depth)
 		} else if bc.Reason == "" {
 			bc.Reason = fmt.Sprintf("High instruction count (%d insns)", bc.InsnCount)
 		}
-		
-		bc.ComplexityScore = math.Round(score*10)/10 // Round to 1 decimal
+
+		bc.ComplexityScore = math.Round(score*10) / 10 // Round to 1 decimal
 		complexities[i] = bc
 	}
-	
+
 	// Sort by complexity score descending (Hotspot Ranking)
 	sort.Slice(complexities, func(i, j int) bool {
 		return complexities[i].ComplexityScore > complexities[j].ComplexityScore
 	})
-	
+
 	// Return top 10 hotspots (or up to 50 blocks) with a minimum score
 	hotspots := make([]BlockComplexity, 0)
 	for i, c := range complexities {

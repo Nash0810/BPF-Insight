@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/Nash0810/BPF-Insight/pkg/analyzer"
-	"github.com/Nash0810/BPF-Insight/pkg/parser"
 	"github.com/Nash0810/BPF-Insight/pkg/cfg"
+	"github.com/Nash0810/BPF-Insight/pkg/parser"
 	"github.com/Nash0810/BPF-Insight/pkg/utils"
+	"github.com/spf13/cobra"
 )
 
 // Global variable for profile name (can be set via flag in future)
@@ -19,12 +19,12 @@ var compareCmd = &cobra.Command{
 	Short: "Compare two eBPF program versions for complexity changes",
 	Long: `Compares the complexity report of a 'before' version and an 'after' (optimized) version.
 It highlights score changes, metric deltas, and resolved/new rule violations.`,
-	Args:  cobra.ExactArgs(2),
+	Args: cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
 		beforeFile := args[0]
 		afterFile := args[1]
 		outputFormat, _ := cmd.Flags().GetString("output-format")
-		
+
 		beforeReport, err := analyzeSingleFile(beforeFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error analyzing BEFORE file (%s): %v\n", beforeFile, err)
@@ -62,7 +62,7 @@ func analyzeSingleFile(filePath string) (*analyzer.ComplexityReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	insts, err := parser.DecodeInstructions(data)
 	if err != nil {
 		return nil, err
@@ -80,12 +80,12 @@ func analyzeSingleFile(filePath string) (*analyzer.ComplexityReport, error) {
 	if profileName != "" {
 		profile = profileName
 	}
-	
+
 	report, err := analyzer.Analyze(filePath, asmInsts, progCFG, profile)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	report.Section = progSection
 
 	return report, nil

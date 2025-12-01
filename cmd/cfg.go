@@ -1,67 +1,67 @@
 package main
 
 import (
-    "fmt"
+	"fmt"
 
-    "github.com/spf13/cobra"
+	"github.com/spf13/cobra"
 
-    "github.com/Nash0810/BPF-Insight/pkg/parser"
-    "github.com/Nash0810/BPF-Insight/pkg/cfg"
+	"github.com/Nash0810/BPF-Insight/pkg/cfg"
+	"github.com/Nash0810/BPF-Insight/pkg/parser"
 )
 
 var cfgCmd = &cobra.Command{
-    Use:   "cfg <file>",
-    Short: "Print basic block and CFG summary",
-    Args:  cobra.ExactArgs(1),
-    RunE: func(cmd *cobra.Command, args []string) error {
-        file := args[0]
+	Use:   "cfg <file>",
+	Short: "Print basic block and CFG summary",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		file := args[0]
 
-        // ELF parser
-        p := parser.ELFParser{FilePath: file}
-        raw, err := p.Parse()
-        if err != nil {
-            return fmt.Errorf("ELF parse error: %w", err)
-        }
+		// ELF parser
+		p := parser.ELFParser{FilePath: file}
+		raw, err := p.Parse()
+		if err != nil {
+			return fmt.Errorf("ELF parse error: %w", err)
+		}
 
-        // Decode
-        insns, err := parser.DecodeInstructions(raw)
-        if err != nil {
-            return fmt.Errorf("decode error: %w", err)
-        }
+		// Decode
+		insns, err := parser.DecodeInstructions(raw)
+		if err != nil {
+			return fmt.Errorf("decode error: %w", err)
+		}
 
-        // Build blocks & CFG
-        blocks := cfg.BuildBasicBlocks(insns)
-        graph := cfg.BuildCFG(blocks)
-        loops := cfg.DetectLoops(graph)
+		// Build blocks & CFG
+		blocks := cfg.BuildBasicBlocks(insns)
+		graph := cfg.BuildCFG(blocks)
+		loops := cfg.DetectLoops(graph)
 
-        fmt.Printf("CFG Summary for %s\n", file)
-        fmt.Println("=================================")
-        fmt.Printf("Basic Blocks: %d\n", len(graph.Blocks))
-        fmt.Printf("Loops Detected: %d\n\n", len(loops))
+		fmt.Printf("CFG Summary for %s\n", file)
+		fmt.Println("=================================")
+		fmt.Printf("Basic Blocks: %d\n", len(graph.Blocks))
+		fmt.Printf("Loops Detected: %d\n\n", len(loops))
 
-        for _, b := range graph.Blocks {
-            fmt.Printf("Block B%d:\n", b.ID)
-            fmt.Printf("  Instructions: %d\n", len(b.Instructions))
-            succIDs := make([]int, len(b.Successors))
-            for i, s := range b.Successors {
-                succIDs[i] = s.ID
-            }
-            predIDs := make([]int, len(b.Predecessors))
-            for i, p := range b.Predecessors {
-                predIDs[i] = p.ID
-            }
-            fmt.Printf("  Successors: %v\n", succIDs)
-            fmt.Printf("  Predecessors: %v\n\n", predIDs)
-        }
+		for _, b := range graph.Blocks {
+			fmt.Printf("Block B%d:\n", b.ID)
+			fmt.Printf("  Instructions: %d\n", len(b.Instructions))
+			succIDs := make([]int, len(b.Successors))
+			for i, s := range b.Successors {
+				succIDs[i] = s.ID
+			}
+			predIDs := make([]int, len(b.Predecessors))
+			for i, p := range b.Predecessors {
+				predIDs[i] = p.ID
+			}
+			fmt.Printf("  Successors: %v\n", succIDs)
+			fmt.Printf("  Predecessors: %v\n\n", predIDs)
+		}
 
-        if len(loops) > 0 {
-            fmt.Println("Loops:")
-            for _, l := range loops {
-                fmt.Printf("  Loop header: B%d, blocks: %v\n",
-                    l.Header, l.Blocks)
-            }
-        }
+		if len(loops) > 0 {
+			fmt.Println("Loops:")
+			for _, l := range loops {
+				fmt.Printf("  Loop header: B%d, blocks: %v\n",
+					l.Header, l.Blocks)
+			}
+		}
 
-        return nil
-    },
+		return nil
+	},
 }
