@@ -1,4 +1,4 @@
-````markdown
+
 # Contributing to BPF-Insight
 
 Thank you for your interest in contributing to BPF-Insight. This document provides guidelines and procedures for contributing to the project.
@@ -268,5 +268,3 @@ Thank you for contributing to BPF-Insight!
 ---
 
 For questions, please open an issue or start a discussion on GitHub.
-
-````
