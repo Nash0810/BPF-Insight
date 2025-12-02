@@ -1,17 +1,18 @@
 # Define the binary path and version info
 BINARY = bpfva
 BUILD_DIR = ./bin
+GO := /usr/local/go/bin/go
 
 .PHONY: build test compile-tests validate clean install visualize-all release
 
 # 1. BUILD: Creates the bin directory and outputs the executable to ./bin/bpfva
 build:
 	@mkdir -p $(BUILD_DIR)
-	go build -o $(BUILD_DIR)/$(BINARY) ./cmd
+	$(GO) build -o $(BUILD_DIR)/$(BINARY) ./cmd
 
 # 2. TEST: Run unit tests
 test:
-	go test ./... -v
+	$(GO) test ./... -v
 
 # 3. COMPILE TESTS: Compiles all C files into .o files (Required before validation)
 compile-tests:
@@ -46,12 +47,13 @@ visualize-all: build compile-tests
 
 # 6. INSTALL: Install binary to /usr/local/bin
 install: build
-	sudo cp $(BUILD_DIR)/$(BINARY) /usr/local/bin/
+	install -m 755 $(BUILD_DIR)/$(BINARY) /usr/local/bin/
+	@echo "✓ Binary installed to /usr/local/bin/$(BINARY)"
 
 # 7. RELEASE: Cross-compile for Linux x86_64
 release:
 	@mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build -o $(BUILD_DIR)/$(BINARY)-linux-amd64 ./cmd
 	@echo "✓ Release binary: $(BUILD_DIR)/$(BINARY)-linux-amd64"
 
 # 8. CLEAN: Removes the build directory and all generated test files.
