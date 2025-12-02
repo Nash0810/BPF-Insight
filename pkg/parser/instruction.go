@@ -148,3 +148,29 @@ func (i Instruction) IsPtrArithmetic() bool {
 
 	return false
 }
+
+// IsPointerModifyingALU returns true for ALU ops that would modify pointers
+// (add, sub, or, and, xor, lsh, rsh). Used for taint propagation heuristics.
+func (i Instruction) IsPointerModifyingALU() bool {
+	if !i.IsALU() {
+		return false
+	}
+	op := i.Opcode & 0xf0
+	switch op {
+	case 0x00: // ADD
+		return true
+	case 0x10: // SUB
+		return true
+	case 0x40: // OR
+		return true
+	case 0x50: // AND
+		return true
+	case 0xa0: // XOR
+		return true
+	case 0x60: // LSH
+		return true
+	case 0x70: // RSH
+		return true
+	}
+	return false
+}

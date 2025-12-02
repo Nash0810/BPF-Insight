@@ -83,7 +83,9 @@ var verifyCmd = &cobra.Command{
 		}
 
 		// ===== 5. Run Verifier =====
-		result := verify.VerifyProgram(flatBlocks, loops)
+		hasBTF, _ := parser.HasBTF(file)
+		meta := &verify.ProgramMeta{HasBTF: hasBTF, FilePath: file}
+		result := verify.VerifyProgram(flatBlocks, loops, meta)
 
 		// ===== 6. Output =====
 		if flagJSON {

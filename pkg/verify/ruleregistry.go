@@ -11,11 +11,13 @@ type Instruction = parser.Instruction
 
 // Rule definition
 type Rule struct {
-	Name         string
-	Description  string
-	Enabled      bool
-	BlockCheck   func(block Block, ins Instruction) []string
-	ProgramCheck func(blocks []Block) []string
+	Name        string
+	Description string
+	Enabled     bool
+	BlockCheck  func(block Block, ins Instruction) []string
+	// BlockCheckState allows rules to consult register state at time of instruction
+	BlockCheckState func(block Block, ins Instruction, rs *RegState) []string
+	ProgramCheck    func(blocks []Block) []string
 }
 
 // Global registry

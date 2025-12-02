@@ -133,3 +133,27 @@ func ParseELF(filePath string) ([]byte, string, error) {
 
 	return data, sectionName, nil
 }
+
+// HasBTF checks whether the ELF contains a .BTF section
+func HasBTF(filePath string) (bool, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	ef, err := elf.NewFile(f)
+	if err != nil {
+		return false, err
+	}
+
+	for _, sec := range ef.Sections {
+		if sec == nil {
+			continue
+		}
+		if sec.Name == ".BTF" || strings.HasPrefix(sec.Name, ".BTF") {
+			return true, nil
+		}
+	}
+	return false, nil
+}

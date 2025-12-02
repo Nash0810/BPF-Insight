@@ -12,10 +12,10 @@ func init() {
 
 	// 1. Pointer arithmetic
 	Rules["pointer_arithmetic"] = &Rule{
-		Name:        "pointer_arithmetic",
-		Description: "Detect ALU arithmetic on pointer registers",
-		Enabled:     true,
-		BlockCheck:  rulePointerArithmetic,
+		Name:            "pointer_arithmetic",
+		Description:     "Detect ALU arithmetic on pointer registers",
+		Enabled:         true,
+		BlockCheckState: rulePointerArithmeticState,
 	}
 
 	// 2. Helper chain
@@ -61,10 +61,10 @@ func init() {
 
 	// 8. Pointer bitwise/shift ops on pointer-like registers
 	Rules["pointer_bitwise_shift"] = &Rule{
-		Name:        "pointer_bitwise_shift",
-		Description: "Detect bitwise and shift operations on registers that may hold pointers",
-		Enabled:     true,
-		BlockCheck:  rulePointerBitwiseShift,
+		Name:            "pointer_bitwise_shift",
+		Description:     "Detect bitwise and shift operations on registers that may hold pointers",
+		Enabled:         true,
+		BlockCheckState: rulePointerBitwiseShiftState,
 	}
 
 	// 9. Unknown helper index
@@ -79,7 +79,7 @@ func init() {
 	Rules["missing_btf"] = &Rule{
 		Name:         "missing_btf",
 		Description:  "Detect absence of BTF data in ELF which may cause verifier to reject loads/funcs",
-		Enabled:      false, // disabled: needs ELF context not available in program-level checks
+		Enabled:      true,
 		ProgramCheck: ruleMissingBTF,
 	}
 
@@ -89,6 +89,14 @@ func init() {
 		Description:  "Block has too many instructions (path explosion risk)",
 		Enabled:      true,
 		ProgramCheck: ruleHighComplexity,
+	}
+
+	// 11. Suspicious shift amounts
+	Rules["suspicious_shifts"] = &Rule{
+		Name:        "suspicious_shifts",
+		Description: "Detect shift operations with suspicious amounts (>= 32 bits)",
+		Enabled:     true,
+		BlockCheck:  ruleSuspiciousShifts,
 	}
 
 	// STRICT ONLY — placeholders
@@ -167,6 +175,42 @@ func rulePointerArithmetic(block cfg.BasicBlock, ins parser.Instruction) []strin
 	// - But can be overwritten: r1 = 0, r1 = r2, etc.
 	// Without state tracking, we can't tell if R1 still contains ctx pointer
 	// So we DON'T check R1 to avoid false positives
+
+	return nil
+}
+
+// State-aware pointer arithmetic check
+func rulePointerArithmeticState(block cfg.BasicBlock, ins parser.Instruction, rs *RegState) []string {
+	// Must be ALU or ALU64 class
+	if !ins.IsALU() {
+		return nil
+	}
+
+	// MOV operations replace the register, not arithmetic - skip them
+	if ins.IsMove() {
+		return nil
+	}
+
+	dst := ins.Dst()
+	src := ins.Src()
+
+	// R10 always pointer
+	if dst == 10 {
+		return []string{"CRITICAL: Pointer arithmetic on R10 (frame pointer)"}
+	}
+	if src == 10 {
+		return []string{"CRITICAL: Pointer arithmetic using R10 as source (frame pointer)"}
+	}
+
+	// Consult regstate: only flag if reg is known to be pointer
+	if rs != nil {
+		if dst >= 0 && dst < len(rs.Regs) && rs.Regs[dst] == RegPtr {
+			return []string{fmtmsg("CRITICAL: Pointer arithmetic on R%d (inferred pointer)", dst)}
+		}
+		if src >= 0 && src < len(rs.Regs) && rs.Regs[src] == RegPtr {
+			return []string{fmtmsg("CRITICAL: Pointer arithmetic using R%d as source (inferred pointer)", src)}
+		}
+	}
 
 	return nil
 }
@@ -263,6 +307,7 @@ func ruleWriteR10(block cfg.BasicBlock, ins parser.Instruction) []string {
 // ------------------------------------------------------------
 // After bpf_map_lookup_elem (helper 1), R0 contains pointer or NULL
 // Must check R0 before dereferencing
+// CRITICAL: Kernel explicitly rejects dereferencing potential NULL
 // ------------------------------------------------------------
 
 func ruleMapLookupNoNull(blocks []cfg.BasicBlock) []string {
@@ -291,7 +336,7 @@ func ruleMapLookupNoNull(blocks []cfg.BasicBlock) []string {
 
 			if !checked {
 				out = append(out,
-					fmtmsg("MEDIUM: Block %d: Map lookup result used without null check", b.ID))
+					fmtmsg("CRITICAL: Block %d: Map lookup result used without null check (kernel rejects this)", b.ID))
 			}
 		}
 	}
@@ -301,7 +346,8 @@ func ruleMapLookupNoNull(blocks []cfg.BasicBlock) []string {
 // 6. Map update without key validation
 // ------------------------------------------------------------
 // NOTE: Cannot be properly implemented without register state tracking
-// Keeping as heuristic warning for all map updates
+// Heuristic warning for all map updates - kernel is strict about this
+// CRITICAL: Map update must have fully validated key
 // ------------------------------------------------------------
 
 func ruleMapUpdateNoKey(blocks []cfg.BasicBlock) []string {
@@ -310,9 +356,9 @@ func ruleMapUpdateNoKey(blocks []cfg.BasicBlock) []string {
 		for _, ins := range b.Instructions {
 			// Detect map update: helper call with imm=2
 			if ins.IsHelperCall() && ins.Imm == 2 {
-				// Heuristic warning - cannot verify R2 contents without state tracking
+				// Flag all map updates as CRITICAL - kernel requires full validation
 				out = append(out,
-					fmtmsg("MEDIUM: Block %d: Map update detected (ensure key in R2 is validated)", b.ID))
+					fmtmsg("CRITICAL: Block %d: Map update detected (kernel requires fully validated key in R2)", b.ID))
 			}
 		}
 	}
@@ -360,6 +406,37 @@ func rulePointerBitwiseShift(block cfg.BasicBlock, ins parser.Instruction) []str
 	return nil
 }
 
+// State-aware bitwise/shift check
+func rulePointerBitwiseShiftState(block cfg.BasicBlock, ins parser.Instruction, rs *RegState) []string {
+	if !ins.IsALU() || ins.IsMove() {
+		return nil
+	}
+	if !ins.IsPtrArithmetic() {
+		return nil
+	}
+
+	dst := ins.Dst()
+	src := ins.Src()
+
+	if dst == 10 {
+		return []string{"CRITICAL: Bitwise/shift operation on R10 (frame pointer)"}
+	}
+	if src == 10 {
+		return []string{"CRITICAL: Bitwise/shift operation using R10 (frame pointer)"}
+	}
+
+	if rs != nil {
+		if dst >= 0 && dst < len(rs.Regs) && rs.Regs[dst] == RegPtr {
+			return []string{fmtmsg("CRITICAL: Bitwise/shift operation on R%d (inferred pointer)", dst)}
+		}
+		if src >= 0 && src < len(rs.Regs) && rs.Regs[src] == RegPtr {
+			return []string{fmtmsg("CRITICAL: Bitwise/shift operation using R%d (inferred pointer)", src)}
+		}
+	}
+
+	return nil
+}
+
 // Program-level aggregation for R10 writes — higher severity
 func ruleWriteR10Program(blocks []cfg.BasicBlock) []string {
 	out := []string{}
@@ -382,20 +459,8 @@ func ruleUnknownHelper(blocks []cfg.BasicBlock) []string {
 	out := []string{}
 
 	// Conservative whitelist of common helpers (kernel-dependent).
-	known := map[int]bool{
-		1:  true, // bpf_map_lookup_elem
-		2:  true, // bpf_map_update_elem
-		3:  true, // bpf_map_delete_elem
-		4:  true,
-		5:  true,
-		6:  true,
-		7:  true,
-		8:  true,
-		9:  true,
-		10: true,
-		11: true,
-		12: true,
-	}
+	// Legacy: no section information available
+	known := AllowedHelpersForSection("")
 
 	for _, b := range blocks {
 		for _, ins := range b.Instructions {
@@ -404,7 +469,35 @@ func ruleUnknownHelper(blocks []cfg.BasicBlock) []string {
 			}
 			hid := int(ins.Imm)
 			if !known[hid] {
-				out = append(out, fmtmsg("Block %d: Helper call with unknown index %d (imm=%d)", b.ID, hid, hid))
+				out = append(out, fmtmsg("MEDIUM: Block %d: Helper call with unknown index %d (imm=%d)", b.ID, hid, hid))
+			}
+		}
+	}
+
+	return out
+}
+
+// Meta-aware unknown helper detection
+func ruleUnknownHelperWithMeta(blocks []cfg.BasicBlock, meta *ProgramMeta) []string {
+	out := []string{}
+	allowed := AllowedHelpersForSection("")
+	if meta != nil {
+		allowed = AllowedHelpersForSection(meta.Section)
+	}
+
+	for _, b := range blocks {
+		for _, ins := range b.Instructions {
+			if !ins.IsHelperCall() {
+				continue
+			}
+			hid := int(ins.Imm)
+			if !allowed[hid] {
+				// Unknown helpers, especially without BTF, are CRITICAL
+				if meta != nil && !meta.HasBTF {
+					out = append(out, fmtmsg("CRITICAL: Block %d: Helper call with index %d not allowed (no BTF to verify)", b.ID, hid))
+				} else {
+					out = append(out, fmtmsg("CRITICAL: Block %d: Helper call with unknown index %d (imm=%d)", b.ID, hid, hid))
+				}
 			}
 		}
 	}
@@ -416,5 +509,77 @@ func ruleUnknownHelper(blocks []cfg.BasicBlock) []string {
 // We cannot reliably detect missing BTF here because `ProgramCheck` only receives blocks
 // which do not include ELF metadata. Keep as a no-op placeholder for future enhancements.
 func ruleMissingBTF(blocks []cfg.BasicBlock) []string {
+	// Placeholder kept for compatibility; actual check occurs in VerifyProgram using ProgramMeta
+	return nil
+}
+
+// Program-level missing BTF check using provided meta
+func ruleMissingBTFWithMeta(blocks []cfg.BasicBlock, meta *ProgramMeta) []string {
+	out := []string{}
+	if meta == nil {
+		return out
+	}
+	if !meta.HasBTF {
+		// Only flag as CRITICAL if the program uses helpers that typically require BTF
+		// (helpers > 10, or struct-based helpers)
+		hasBTFDependentHelpers := false
+		for _, b := range blocks {
+			for _, ins := range b.Instructions {
+				if ins.IsHelperCall() {
+					hid := int(ins.Imm)
+					// Helpers 11+ are typically struct-dependent and need BTF
+					// Helpers 1-10 (map/get_prandom/ktime etc) often work without BTF
+					if hid > 10 {
+						hasBTFDependentHelpers = true
+						break
+					}
+				}
+			}
+			if hasBTFDependentHelpers {
+				break
+			}
+		}
+		
+		if hasBTFDependentHelpers {
+			out = append(out, "CRITICAL: Missing BTF information in ELF (program uses BTF-dependent helpers)")
+		} else {
+			// Mark as medium warning instead
+			out = append(out, "MEDIUM: Missing BTF information in ELF")
+		}
+	}
+	return out
+}
+
+// Suspicious shift amounts
+// Large shifts (>= 32 bits) on interpreted values can cause verifier issues
+func ruleSuspiciousShifts(block cfg.BasicBlock, ins parser.Instruction) []string {
+	// Check if this is a shift operation
+	// Shifts are handled in ALU/ALU64, with function code 0x60 (LSH), 0x70 (RSH), 0xc0 (ARSH)
+	if !ins.IsALU() {
+		return nil
+	}
+	
+	opFn := ins.Opcode & 0xf0 // Get function code (upper nibble)
+	
+	// Shift operations
+	isShift := opFn == 0x60 || opFn == 0x70 || opFn == 0xc0 // LSH, RSH, ARSH
+	if !isShift {
+		return nil
+	}
+	
+	// Get shift amount
+	// If source register is 0, use immediate; otherwise it's a register operand (variable)
+	srcReg := ins.Src()
+	if srcReg != 0 {
+		// Register operand (variable shift amount)
+		return []string{"MEDIUM: Shift with register operand (variable shift amount)"}
+	}
+	
+	// Immediate operand - check the value
+	shiftAmount := int(ins.Imm) & 0xff // Only lower 8 bits matter
+	if shiftAmount >= 32 {
+		return []string{fmtmsg("MEDIUM: Shift amount %d is suspicious (>= 32 bits on scalar)", shiftAmount)}
+	}
+	
 	return nil
 }

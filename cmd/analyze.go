@@ -41,7 +41,25 @@ var analyzeCmd = &cobra.Command{
 		// Use the shared analyzeSingleFile function
 		report, err := analyzeSingleFile(file)
 		if err != nil {
-			return err
+			// Create an error report with WILL_FAIL prediction
+			report = &analyzer.ComplexityReport{
+				FilePath:       file,
+				TotalScore:     100.0,
+				CFGScore:       40.0,
+				RulePenalty:    60.0,
+				Prediction:     "WILL_FAIL",
+				InstructionCount: 0,
+				Recommendations: []analyzer.Recommendation{
+					{
+						Pattern:    "unparseable",
+						Severity:   "critical",
+						Location:   "Program",
+						Issue:      fmt.Sprintf("Unable to parse ELF file: %v", err),
+						Suggestion: "Check ELF file structure and section headers",
+						Priority:   1,
+					},
+				},
+			}
 		}
 
 		// Output

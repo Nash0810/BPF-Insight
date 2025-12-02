@@ -7,6 +7,7 @@ import (
 	"time"
 	// Ensure these imports are correct for your project structure
 	"github.com/Nash0810/BPF-Insight/pkg/cfg"
+	"github.com/Nash0810/BPF-Insight/pkg/parser"
 	"github.com/Nash0810/BPF-Insight/pkg/verify"
 	"github.com/cilium/ebpf/asm"
 )
@@ -94,6 +95,25 @@ func Analyze(filePath string, insts []asm.Instruction, progCFG *cfg.CFG, profile
 
 	// 2. Run Rule Engine (Verifier)
 	loops := cfg.DetectLoops(progCFG)
+	
+	// Empty program (no instructions) → guaranteed FAIL
+	if len(insts) == 0 {
+		report.TotalScore = 100.0
+		report.CFGScore = 40.0
+		report.RulePenalty = 60.0
+		report.Prediction = "WILL_FAIL"
+		report.Recommendations = []Recommendation{
+			{
+				Pattern:    "unparseable",
+				Severity:   "critical",
+				Location:   "Program",
+				Issue:      "Empty or unparseable eBPF section",
+				Suggestion: "Check ELF file structure and section headers",
+				Priority:   1,
+			},
+		}
+		return report, nil
+	}
 
 	// Convert []*BasicBlock to []BasicBlock for VerifyProgram
 	blocks := make([]cfg.BasicBlock, len(progCFG.Blocks))
@@ -101,7 +121,10 @@ func Analyze(filePath string, insts []asm.Instruction, progCFG *cfg.CFG, profile
 		blocks[i] = *blk
 	}
 
-	vReport := verify.VerifyProgram(blocks, loops)
+	// Build program metadata and pass to verifier
+	hasBTF, _ := parser.HasBTF(filePath)
+	meta := &verify.ProgramMeta{HasBTF: hasBTF, FilePath: filePath}
+	vReport := verify.VerifyProgram(blocks, loops, meta)
 
 	// Convert verify.VerifyOutput to analyzer.Recommendation
 	report.Recommendations = convertVerifyOutputToRecommendations(vReport, progCFG)
@@ -135,15 +158,15 @@ func calculateRulePenaltyFromWarnings(vReport verify.VerifyOutput) float64 {
 	penalty := 0.0
 
 	// Severity mapping (points)
-	// CRITICAL: 12, HIGH: 8, MEDIUM: 4, LOW: 2
+	// CRITICAL: 15, HIGH: 10, MEDIUM: 5, LOW: 2
 	for _, bw := range vReport.BlockWarnings {
 		msg := strings.ToLower(bw.Message)
 		if strings.Contains(msg, "critical") {
-			penalty += 12.0
-		} else if strings.Contains(msg, "pointer arithmetic") || strings.Contains(msg, "frame pointer") || strings.Contains(msg, "bitwise/shift") || strings.Contains(msg, "bitwise") {
-			penalty += 8.0
+			penalty += 15.0
+		} else if strings.Contains(msg, "pointer arithmetic") || strings.Contains(msg, "frame pointer") || strings.Contains(msg, "bitwise/shift") || strings.Contains(msg, "bitwise") || strings.Contains(msg, "shift amount") {
+			penalty += 10.0
 		} else if strings.Contains(msg, "stack access") || strings.Contains(msg, "null check") || strings.Contains(msg, "unknown helper") {
-			penalty += 4.0
+			penalty += 5.0
 		} else {
 			penalty += 2.0
 		}
@@ -153,14 +176,14 @@ func calculateRulePenaltyFromWarnings(vReport verify.VerifyOutput) float64 {
 	for _, pw := range vReport.ProgramWarnings {
 		// Program-level CRITICAL markers increase weight
 		if strings.Contains(strings.ToLower(pw), "critical") {
-			penalty += 15.0
+			penalty += 20.0
 		} else {
-			penalty += 10.0
+			penalty += 12.0
 		}
 	}
 
-	// Cap rule penalty at 50 points
-	return math.Min(penalty, 50.0)
+	// Cap rule penalty at 75 points (increased from 50)
+	return math.Min(penalty, 75.0)
 }
 
 // convertVerifyOutputToRecommendations converts verify.VerifyOutput to analyzer.Recommendations
@@ -266,7 +289,7 @@ func calculateTotalScore(r *ComplexityReport) (totalScore, cfgScore float64) {
 	// Total CFG Score (Max 40+15+10+10+5 = 80)
 	cfgScore = instructionScore + depthScore + loopScore + avgBranchingScore + helperScore
 
-	// Final Score: CFG Complexity + Rule Penalties (Max 80 + 40 = 120, capped at 100)
+	// Final Score: CFG Complexity + Rule Penalties (Max 80 + 60 = 140, capped at 100)
 	totalScore = math.Min(100.0, cfgScore+r.RulePenalty)
 
 	// Round scores for cleaner output
@@ -280,9 +303,9 @@ func calculateTotalScore(r *ComplexityReport) (totalScore, cfgScore float64) {
 // (Section 3.2 Interpretation)
 func getPrediction(score float64) string {
 	switch {
-	case score < 30:
+	case score < 25:
 		return "LIKELY_PASS"
-	case score < 55:
+	case score < 50:
 		return "MAY_PASS"
 	case score < 75:
 		return "LIKELY_FAIL"
