@@ -1,7 +1,8 @@
 # Define the binary path and version info
 BINARY = bpfva
 BUILD_DIR = ./bin
-GO := /usr/local/go/bin/go
+# Find Go in PATH, fallback to common locations
+GO := $(shell command -v go || echo /usr/local/go/bin/go)
 
 .PHONY: build test compile-tests validate clean install visualize-all release
 
