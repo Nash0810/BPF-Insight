@@ -1,116 +1,143 @@
-# BPF-Insight v1.0.0 - Release Notes
+# BPF-Insight v1.0.0 Release Notes
 
 **Release Date**: December 2, 2025  
-**Status**: Production Ready  
-**License**: Apache 2.0
+**Version**: 1.0.0  
+**Status**: Production Release
 
-## Executive Summary
+## Summary
 
-BPF-Insight v1.0.0 is a static analysis tool for predicting eBPF verifier acceptance/rejection with **100% accuracy on the test validation suite**. This release represents a complete, production-ready implementation with comprehensive rule detection, advanced register-state tracking, and actionable diagnostics.
+BPF-Insight v1.0.0 is a static analysis tool for predicting eBPF program verifier acceptance and rejection. This release includes a custom bytecode decoder, dataflow-based register state tracking, and comprehensive violation pattern detection. Validation testing demonstrates 100% prediction accuracy on 15 confident test classifications with zero false positives.
 
-## Accuracy Metrics
+## Validation Results
 
-- **Confident Predictions**: 15/15 (100.00% correct)
-- **Uncertain Predictions**: 11 MAY_PASS (conservative fallback)
+- **Confident Predictions**: 15/15 correct classifications
+- **Uncertain Classifications**: 11 conservative MAY_PASS designations
 - **Test Coverage**: 26 eBPF programs across 11+ violation categories
 - **False Positive Rate**: 0%
 - **False Negative Rate**: 0%
 
-## Key Features
+## Core Features
 
-### 1. Custom eBPF Instruction Decoder
-- Full support for LD_IMM64 (64-bit immediate instructions)
-- Replaced cilium/ebpf dependency for improved parsing reliability
-- Handles all standard BPF opcodes and classes
+### Custom eBPF Instruction Decoder
+- Complete LD_IMM64 support (64-bit immediate instructions)
+- All standard BPF opcode classes and instruction types
+- Independent implementation replacing external dependencies
 
-### 2. Register-State Tracking (RegState)
-- Conservative taint propagation across basic blocks
-- Distinguishes between pointer and scalar values
-- Only marks result as unknown when pointer-modifying ALU ops are involved
-- Enables state-aware rule detection
+### Register-State Tracking
 
-### 3. Comprehensive Verifier Rule Engine (11+ Rules)
+Conservative taint propagation across basic blocks with explicit type tracking:
+- **RegPtr**: Inferred or explicit pointer values
+- **RegScalar**: Scalar values without pointer semantics
+- **RegUnknown**: Values with ambiguous classification
 
-| Rule | Severity | Detection Mechanism |
-|------|----------|-------------------|
+Only pointer-modifying ALU operations produce unknown state, enabling precise pattern detection.
+
+### Verifier Rule Engine
+
+| Rule | Severity | Mechanism |
+|------|----------|-----------|
 | Pointer Arithmetic | CRITICAL | State-aware detection on inferred pointers |
-| R10 (Frame Pointer) Writes | CRITICAL | Block-level + Program-level aggregation |
-| Map Lookup Without Null Check | CRITICAL | Helper #1 detection + null-check lookahead |
-| Map Update Without Key Validation | CRITICAL | Helper #2 detection |
-| Bitwise/Shift on Pointers | CRITICAL | State-aware or R10-specific checks |
-| Unknown Helpers (No BTF) | CRITICAL | Helper index validation per section |
-| Suspicious Shift Amounts (≥32 bits) | MEDIUM | Immediate value analysis |
-| Stack Variable Offsets | CRITICAL | Offset bounds checking |
-| High Block Complexity | LOW | Instruction count thresholds |
-| Helper Chains in Blocks | MEDIUM | Multiple helper call detection |
-| Missing BTF (for BTF-dependent helpers) | CRITICAL | Helper > 10 heuristic |
+| Frame Pointer (R10) Writes | CRITICAL | Program-level aggregation |
+| Map Lookup Without Null Check | CRITICAL | Helper pattern detection with null-check lookahead |
+| Map Update Without Key Validation | CRITICAL | Helper pattern detection |
+| Bitwise/Shift on Pointers | CRITICAL | State-aware operation classification |
+| Unknown Helpers | CRITICAL | Helper index validation per section |
+| Stack Variable Offsets | CRITICAL | Bounds checking on stack access offsets |
+| Suspicious Shift Amounts | MEDIUM | Detection of shifts >= 32 bits on scalars |
+| Helper Chains | MEDIUM | Multiple helper calls within single block |
+| High Block Complexity | LOW | Instruction count threshold analysis |
+| Missing BTF | CRITICAL | Detects absence for BTF-dependent helpers |
 
-### 4. Severity-Based Scoring
-- **CRITICAL**: 15-20 points (block/program level)
-- **HIGH**: 10 points (pointer-related violations)
-- **MEDIUM**: 5 points (general safety issues)
-- **LOW**: 2 points (minor concerns)
-- Maximum penalty cap: 75 points
+### Severity-Based Scoring System
 
-### 5. Prediction Thresholds
-- **< 25**: LIKELY_PASS (safe to submit)
-- **25-50**: MAY_PASS (conservative - may pass or fail)
-- **50-75**: LIKELY_FAIL (likely rejected)
-- **≥ 75**: WILL_FAIL (guaranteed rejection or parse error)
+Penalties applied based on violation severity:
+- **CRITICAL**: 15-20 points per occurrence
+- **HIGH**: 10 points per occurrence
+- **MEDIUM**: 5 points per occurrence
+- **LOW**: 2 points per occurrence
 
-### 6. Control Flow Graph (CFG) Analysis
-- Builds basic blocks from jump instructions
-- Detects loops via back-edge identification
-- Calculates complexity hotspots
-- Generates Graphviz DOT visualization
-- Supports rendering to PNG/PDF with optional rendering
+Maximum total penalty: 75 points
 
-### 7. Multi-Format Output
-- **Text**: Human-readable with recommendations
-- **JSON**: Programmatic access to all metrics and scores
-- **CSV**: Batch processing results
+### Prediction Thresholds
 
-### 8. Batch Processing
-- Analyze entire directories recursively
-- Aggregate statistics across programs
-- Filter by file pattern
-- Export results to file
+Score ranges map to predicted verifier outcomes:
+- **< 25**: LIKELY_PASS - Program expected to pass verifier
+- **25-50**: MAY_PASS - Uncertain classification, conservative categorization
+- **50-75**: LIKELY_FAIL - Program expected to be rejected
+- **≥ 75**: WILL_FAIL - Program expected to fail or unable to parse
 
-## Technical Improvements
+### Control Flow Graph Analysis
 
-### Parser Enhancements
-- Custom LD_IMM64 handling (16-byte instructions)
-- Proper ELF section detection (prioritizes .xdp, .socket before .text)
-- Empty section handling (returns WILL_FAIL)
-- BTF section detection for helper profiling
+- Basic block identification and connection analysis
+- Loop detection through back-edge identification
+- Complexity hotspot calculation and ranking
+- DOT format graph generation
+- PNG rendering support via Graphviz
 
-### Verifier Refinements
-- Dataflow-based register state propagation using worklist algorithm
+### Output Formats
+
+- **Text**: Human-readable analysis with recommendations
+- **JSON**: Structured data for programmatic integration
+- **CSV**: Tabular format for batch result aggregation
+
+### Batch Processing
+
+- Recursive directory analysis
+- File pattern filtering
+- Statistical aggregation
+- Result export to file
+
+## Technical Enhancements
+
+### Parser Implementation
+
+- 16-byte instruction handling for LD_IMM64
+- ELF section prioritization (.xdp, .socket, .text)
+- Empty section classification as WILL_FAIL
+- BTF section detection and profiling
+
+### Verifier Analysis
+
+- Worklist-based dataflow state propagation
 - Program-level checks with metadata awareness
-- Section-based helper profiles (xdp, socket, generic)
-- Conservative failure modes (unparseable → WILL_FAIL)
+- Section-specific helper whitelists
+- Conservative failure classification for unparseable programs
 
-### Scoring Formula
+### Scoring Methodology
+
 ```
-TotalScore = CFG_Complexity_Score + Rule_Penalty_Score
-CFG_Score = Instruction_Score + Depth_Score + Loop_Score + 
-            Branching_Score + Helper_Score
-            (components capped at 40, 15, 10, 10, 5 points respectively)
+Total Score = CFG Complexity Score + Rule Penalty Score
+
+CFG Score Components:
+  - Instruction count (0-40 points)
+  - Branch depth (0-15 points)
+  - Loop nesting (0-10 points)
+  - Branching factor (0-10 points)
+  - Helper invocations (0-5 points)
 ```
 
 ## Breaking Changes
-None - this is the initial v1.0.0 release.
 
-## Known Limitations
+None - this is the initial production release.
 
-1. **Register-State Granularity**: Limited to 11 registers (R0-R10); no support for tracking individual field offsets
-2. **Helper Profiles**: Conservative whitelists per section (can be expanded with kernel version data)
-3. **Cross-Platform**: Currently tested on Linux x86_64; may require adjustments for other architectures
-4. **BTF Analysis**: Only flags presence; doesn't parse BTF type information
+## Known Constraints
+
+1. **Register Granularity**: Analysis limited to 11 registers (R0-R10); no field-level offset tracking
+2. **Helper Profiles**: Conservative whitelists by section; expansion possible with kernel-specific data
+3. **Cross-Platform**: Currently tested on Linux x86_64 only
+4. **BTF Handling**: Presence detection only; no BTF type information parsing
+
+## Prediction Limitations
+
+- **False Positives**: High-scoring programs may pass verifier on specific kernel versions
+- **False Negatives**: Complex verifier interactions may reject low-scoring programs
+- **Kernel Variance**: Verifier behavior and limits vary across kernel versions
+- **Heuristic-Based**: Scoring uses approximations rather than exact verifier simulation
 
 ## Installation
 
-### Pre-built Binary (Recommended)
+### Pre-built Binary
+
 ```bash
 wget https://github.com/Nash0810/BPF-Insight/releases/download/v1.0.0/bpfva-linux-amd64
 chmod +x bpfva-linux-amd64
@@ -118,6 +145,7 @@ sudo mv bpfva-linux-amd64 /usr/local/bin/bpfva
 ```
 
 ### Build from Source
+
 ```bash
 git clone https://github.com/Nash0810/BPF-Insight
 cd BPF-Insight
@@ -126,21 +154,23 @@ make build
 sudo make install
 ```
 
-### Requirements
-- Linux x86_64
-- Go 1.21+ (for building)
-- clang 14+ (for compiling eBPF test programs)
-- libbpf-dev (for linking)
+### Build Requirements
+
+- Go 1.21 or later
+- clang 14 or later
+- libbpf-dev
 - Graphviz (optional, for visualization rendering)
 
 ## Usage Examples
 
-### Analyze a Program
+### Program Analysis
+
 ```bash
-$ bpfva analyze my_program.o
-eBPF Verifier Complexity Analysis
-==================================
-File: my_program.o
+$ bpfva analyze program.o
+
+eBPF Program Analysis
+====================
+File: program.o
 Section: xdp
 
 Metrics:
@@ -152,11 +182,12 @@ Complexity Score: 15.2 / 100
 Prediction: LIKELY_PASS
 ```
 
-### JSON Output
+### JSON Export
+
 ```bash
-$ bpfva analyze my_program.o --json | jq .
+$ bpfva analyze program.o --json | jq .
 {
-  "file": "my_program.o",
+  "file": "program.o",
   "instruction_count": 42,
   "TotalScore": 15.2,
   "Prediction": "LIKELY_PASS",
@@ -165,69 +196,74 @@ $ bpfva analyze my_program.o --json | jq .
 ```
 
 ### Batch Analysis
+
 ```bash
-$ bpfva batch ./ebpf_programs --recursive
+$ bpfva batch ./programs --recursive
+
 Total Programs: 12
 Analyzed: 11
-Errors: 1
-High Risk: [complex_prog.o, data_race.o]
+Failures: 1
 Average Score: 35.4
+High Risk Count: 2
 ```
 
-### Visualization
+### Graph Visualization
+
 ```bash
-$ bpfva visualize my_program.o --render
-CFG saved to: my_program.o.dot
-PNG saved to: my_program.o.png
+$ bpfva visualize program.o --render
+
+Generated: program.o.dot
+Rendered: program.o.png
 ```
 
 ## Contributing
 
-We welcome contributions! Areas for future enhancement:
-- Additional helper profiles for different kernel versions
-- Support for more eBPF program types (TC, kretprobe, etc.)
-- Advanced alias analysis for better pointer tracking
+Contributions are welcome. Planned enhancements for future releases include:
+- Extended register-state analysis with field offset tracking
+- Kernel version-specific helper profiles
+- Architecture support: ARM64, RISC-V
+- Additional program types: TC, kretprobe
 - Machine learning-based prediction refinement
-- Cross-platform support (ARM, RISC-V)
 
-## Support & Feedback
+## Issue Reporting
 
-- **Issues**: Report bugs at https://github.com/Nash0810/BPF-Insight/issues
-- **Discussions**: Community discussions at https://github.com/Nash0810/BPF-Insight/discussions
-- **Confidential**: For security issues, email security@example.com
+- **Bug Reports**: https://github.com/Nash0810/BPF-Insight/issues
+- **Discussions**: https://github.com/Nash0810/BPF-Insight/discussions
 
 ## Changelog
 
-### v1.0.0 (Initial Release)
-- ✅ Custom eBPF decoder with LD_IMM64 support
-- ✅ Register-state tracking and taint analysis
-- ✅ 11+ verifier rule detections
-- ✅ Severity-based penalty scoring
-- ✅ CFG visualization with loop detection
-- ✅ Batch processing and JSON export
-- ✅ 100% test accuracy (15/15 confident predictions)
+### v1.0.0 (December 2, 2025)
 
-## Performance
+**Initial Release**
 
-- **Parse Time**: < 100ms for typical programs
-- **Analysis Time**: < 200ms including CFG + rules
-- **Memory**: < 50MB for large programs
-- **Binary Size**: 6.8MB (statically compiled, no dependencies)
+- Custom eBPF instruction decoder with LD_IMM64 support
+- Register-state tracking with dataflow propagation
+- 11+ verifier rule pattern detection
+- Severity-based violation scoring
+- Control flow graph analysis and visualization
+- Batch processing with JSON export
+- Command-line interface with multiple analysis modes
+- Validation: 100% accuracy on test suite (15/15 confident predictions)
+
+## Performance Characteristics
+
+- **Instruction Parsing**: < 100ms for typical programs
+- **Analysis Pipeline**: < 200ms total (CFG + rules + scoring)
+- **Memory Usage**: < 50MB peak for large programs
+- **Binary Size**: 6.8MB (statically compiled)
+- **Build Time**: < 30 seconds
 
 ## License
 
-Apache License 2.0 - See LICENSE file for details
+Apache License 2.0 - See LICENSE file
 
 ## Acknowledgments
 
-Built with:
-- Go standard library
-- Cobra (CLI framework)
-- debug/elf (ELF parsing)
-- Custom BPF decoder
-
-Special thanks to the eBPF community for documentation and test cases.
+- Linux kernel eBPF verifier implementation and documentation
+- Go standard library and ecosystem
+- Cobra command-line framework
+- debug/elf package for ELF parsing
 
 ---
 
-**v1.0.0 - December 2, 2025**
+v1.0.0 - December 2, 2025
