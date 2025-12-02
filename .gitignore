@@ -14,8 +14,11 @@
 coverage.txt
 
 # Go modules
-go.sum
 vendor/
+
+# Go binaries and executables
+*.exe
+*.dll
 
 ###############################
 # eBPF & ELF Artifacts
