@@ -1,4 +1,3 @@
-````markdown
 # BPF-Insight v1.0.0 - GitHub Release Instructions
 
 ## Overview
@@ -31,15 +30,12 @@ This document provides step-by-step instructions for creating the v1.0.0 GitHub 
 ## Step 4: Set Release Title
 
 **Title field**: Enter:
-```
 v1.0.0 - Initial Release
-```
 
 ## Step 5: Add Release Description
 
 **Description field**: Copy the following text (or from RELEASE_NOTES.md):
 
-```
 BPF-Insight v1.0.0 - Production Release
 
 A static analysis tool for predicting eBPF program verifier acceptance and rejection through static complexity analysis.
@@ -56,24 +52,19 @@ A static analysis tool for predicting eBPF program verifier acceptance and rejec
 ## Installation
 
 ### Pre-built Binary
-```bash
 wget https://github.com/Nash0810/BPF-Insight/releases/download/v1.0.0/bpfva-linux-amd64
 chmod +x bpfva-linux-amd64
 sudo mv bpfva-linux-amd64 /usr/local/bin/bpfva
-```
 
 ### Build from Source
-```bash
 git clone https://github.com/Nash0810/BPF-Insight
 cd BPF-Insight
 git checkout v1.0.0
 make build
 sudo make install
-```
 
 ## Quick Start
 
-```bash
 # Analyze a program
 bpfva analyze my_program.o
 
@@ -85,7 +76,6 @@ bpfva batch ./programs --recursive
 
 # JSON output
 bpfva analyze program.o --json
-```
 
 ## Features
 
@@ -126,7 +116,6 @@ For technical details, see PROJECT_STATE_v1.0.0.md.
 ---
 
 v1.0.0 - December 2, 2025 - Production Release
-```
 
 ## Step 6: Upload Binary
 
@@ -138,7 +127,6 @@ v1.0.0 - December 2, 2025 - Production Release
 
 **Add to release description or as separate file**:
 
-```
 Binary Verification:
 
 SHA256 Checksum:
@@ -151,7 +139,6 @@ $ sha256sum bpfva-linux-amd64
 Or:
 $ echo "2e1f9607b90e1f2ad870d1f93b943046897d0bf71426f5a7a4b8acc6b34f6477  bpfva-linux-amd64" | sha256sum -c
 bpfva-linux-amd64: OK
-```
 
 ## Step 8: Set Release Options
 
@@ -181,9 +168,7 @@ After publishing, verify the release:
 
 Once published, users can download via:
 
-```
 https://github.com/Nash0810/BPF-Insight/releases/download/v1.0.0/bpfva-linux-amd64
-```
 
 ## Distribution
 
@@ -205,4 +190,3 @@ The release is now available to:
 
 After completing these steps, the release is complete and ready for public use.
 
-````

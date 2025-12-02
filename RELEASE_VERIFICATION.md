@@ -1,4 +1,3 @@
-````markdown
 # BPF-Insight v1.0.0 - Release Verification Checklist
 
 **Release Date**: December 2, 2025  
@@ -183,4 +182,3 @@
 **Date**: December 2, 2025  
 **Status**: 🟢 Ready for Public Release
 
-````

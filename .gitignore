@@ -28,9 +28,6 @@ vendor/
 test/compiled/*.o
 *.o
 
-# BPF skeletons / generated maps
-*.skel.h
-
 # LLVM/Clang outputs
 *.ll
 *.bc
@@ -129,6 +126,11 @@ validation_results.txt
 *.md.tmp
 *.md.bak
 
-
-
+# Project planning and notes (local only)
 plan.txt
+notes.txt
+TODO.txt
+
+# Validation and test outputs
+/tmp/verify_outputs/
+/tmp/verify_summary.txt

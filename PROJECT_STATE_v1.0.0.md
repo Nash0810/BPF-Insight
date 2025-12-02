@@ -1,4 +1,3 @@
-````markdown
 # BPF-Insight v1.0.0 - Project State Documentation
 
 **Release Date**: December 2, 2025  
@@ -147,7 +146,6 @@ Final result: **100% accuracy** on 15 confident test classifications with 11 unc
 
 ### Data Flow
 
-```
 Input (ELF File)
     ↓
 [Parser] → Extract instructions + metadata
@@ -161,7 +159,6 @@ Input (ELF File)
 [Analyzer] → Combine scores + penalties
     ↓
 Output (Report)
-```
 
 ## Implementation Details
 
@@ -180,7 +177,6 @@ Conservative taint propagation using worklist-based dataflow:
 
 ### Scoring Formula
 
-```
 Total Score = CFG Score + Rule Penalty Score
 
 CFG Score = MIN(40, instruction_score) +
@@ -194,7 +190,6 @@ Rule Penalty = SUM(violation_severities * points)
 Final Score = MIN(75, Total Score)
 
 Prediction = CLASSIFY(Final Score)
-```
 
 ### Pattern Detection Rules
 
@@ -373,17 +368,13 @@ Programs compiled to eBPF bytecode, analyzed by BPF-Insight, then validated agai
 
 ### Installation
 
-```bash
 sudo mv bpfva-linux-amd64 /usr/local/bin/bpfva
 chmod +x /usr/local/bin/bpfva
 bpfva --version
-```
 
 ### CI/CD Integration
 
-```bash
 bpfva batch ./programs --recursive --output results.json
-```
 
 ## Contributing Guidelines
 
@@ -409,4 +400,3 @@ Apache License 2.0 - Full text in LICENSE file
 v1.0.0 - December 2, 2025
 Production Release - Complete Implementation
 
-````
