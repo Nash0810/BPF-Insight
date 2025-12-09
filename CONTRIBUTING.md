@@ -1,258 +1,232 @@
 
+
+
 # Contributing to BPF-Insight
 
-Thank you for your interest in contributing to BPF-Insight. This document provides guidelines and procedures for contributing to the project.
+This is an educational project built to production code standards. Contributions are welcome but should be approached with the understanding that this is a systems engineering learning exercise, not a commercial product.
+
+## What This Project Is
+
+- ✅ A deep technical case study in reverse-engineering the eBPF verifier
+- ✅ Production-quality code for learning purposes
+- ✅ A platform for exploring static analysis, abstract interpretation, and control flow analysis
+- ❌ Not a commercial product or enterprise solution
+- ❌ Not officially supported by kernel maintainers
 
 ## Getting Started
 
 ### Prerequisites
 
-- Go 1.21 or later
-- clang 14 or later
-- libbpf-dev
-- Graphviz (optional, for visualization)
-- git
+- Go 1.21+
+- clang 14+ (for compiling test eBPF programs)
+- Basic understanding of eBPF, the kernel verifier, and static analysis
 
-### Build from Source
+### Setup
 
 ```bash
 git clone https://github.com/Nash0810/BPF-Insight
 cd BPF-Insight
 make build
-```
-
-### Run Tests
-
-```bash
 make test
 ```
 
-## Development Workflow
+## Before Contributing
 
-### 1. Fork and Clone
+**Familiarize yourself with:**
+1. [ARCHITECTURE.md](./ARCHITECTURE.md) — Design decisions and data flow
+2. [METHODOLOGY.md](./docs/METHODOLOGY.md) — How verifier constraints map to analysis
+3. Existing code in `pkg/cfg/`, `pkg/verify/`, `pkg/parser/`
 
+The project uses a clear pipeline:
+```
+ELF File → Parser → CFG Builder → Register Simulator → Analyzer → Report
+```
+
+## Code Quality Checklist
+
+**Before submitting:**
 ```bash
-git clone https://github.com/YOUR-USERNAME/BPF-Insight
-cd BPF-Insight
-git remote add upstream https://github.com/Nash0810/BPF-Insight
+make test       # All tests must pass
+go fmt ./...    # Format code
+go vet ./...    # Check for issues
 ```
 
-### 2. Create a Feature Branch
+**Code style:**
+- Follow existing naming conventions
+- Keep functions focused (single responsibility)
+- Add comments for non-obvious logic
+- Structure: types first, then helpers, then public methods
 
+## Types of Contributions
+
+### Bug Fixes
+- Fix accuracy issues in existing rules
+- Improve ELF parsing edge cases
+- Correct CFG construction errors
+- Better error messages
+
+**Process:**
+1. Describe the bug with test case
+2. Fix the issue
+3. Add regression test
+4. Document the fix in PR
+
+### New Verification Rules
+
+**Important**: Understand the real verifier behavior first!
+
+1. **Research:**
+   - Read relevant kernel source (`kernel/bpf/verifier.c`)
+   - Find test cases that trigger the constraint
+   - Document why the pattern causes rejection
+
+2. **Implement:**
+   ```go
+   Rules["my_rule"] = &Rule{
+       Name:        "my_rule",
+       Description: "What I'm checking",
+       Enabled:     true,
+       BlockCheckState: func(block *cfg.BasicBlock, ins parser.Instruction, state *RegState) []string {
+           // Examine block, instruction, and register state
+           if violatesConstraint {
+               return []string{"Violation description"}
+           }
+           return []string{}
+       },
+   }
+   ```
+
+3. **Test:**
+   - Create `.c` file in `test/validation/` that triggers the rule
+   - Compile: `clang -O2 -target bpf -c test.c -o test.o`
+   - Verify: `bpfva verify test.o --json`
+
+4. **Document:**
+   - Add section to [METHODOLOGY.md](./docs/METHODOLOGY.md)
+   - Include example code (bad and good)
+   - Explain the constraint
+
+5. **Profile Assignment:**
+   - Update `pkg/verify/profiles.go`
+   - Assign to "strict"/"default"/"permissive"
+
+### Performance Improvements
+
+**Measurement required:**
 ```bash
-git checkout -b feature/your-feature-name
+# Baseline
+/usr/bin/time -v bpfva batch test/compiled --recursive 2>&1 | grep elapsed
+
+# After optimization
+/usr/bin/time -v bpfva batch test/compiled --recursive 2>&1 | grep elapsed
 ```
 
-Use descriptive branch names:
-- `feature/add-new-rule` for new features
-- `fix/null-pointer-check` for bug fixes
-- `docs/update-readme` for documentation
-- `test/add-coverage` for tests
+**Document in PR:**
+- Before/after times
+- Test environment (CPU, RAM)
+- Trade-offs (speed vs. accuracy)
 
-### 3. Make Changes
+### Documentation
 
-- Write clear, idiomatic Go code
-- Follow existing code style and organization
-- Add tests for new functionality
-- Update documentation as needed
+- Update [EXAMPLES.md](./docs/EXAMPLES.md) for user-facing features
+- Update [ARCHITECTURE.md](./ARCHITECTURE.md) for design changes
+- Update [METHODOLOGY.md](./docs/METHODOLOGY.md) for analysis changes
 
-### 4. Commit Changes
+### Tests
 
-Use semantic commit messages:
+- Write table-driven tests for multiple scenarios
+- Test both success and failure paths
+- Aim for >80% coverage on new code
 
-```
-feat: add shift amount validation rule
+## Testing Guide
 
-- Detect shifts >= 32 bits on scalars
-- Classify as MEDIUM severity
-- Add test coverage for edge cases
-```
-
-Format: `<type>: <subject>`
-
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation
-- `test`: Test additions/changes
-- `refactor`: Code refactoring
-- `perf`: Performance improvements
-- `chore`: Build/tooling changes
-
-### 5. Test Your Changes
-
+### Run Tests
 ```bash
-make build      # Compile
-make test       # Run tests
-make clean      # Clean artifacts
+go test ./...                      # All packages
+go test ./pkg/cfg -v              # Verbose
+go test ./pkg/verify -run TestXXX  # Specific test
 ```
 
-Ensure all tests pass before submitting.
-
-### 6. Push and Create Pull Request
-
+### Integration Tests
 ```bash
-git push origin feature/your-feature-name
+make test       # Compile test programs and run analysis
+sudo make validate  # Load with bpftool (requires root)
 ```
 
-Then create a pull request on GitHub with:
-- Clear description of changes
-- Reference to related issues
-- Test coverage information
-- Performance impact (if applicable)
-
-## Code Style
-
-### Go Code Guidelines
-
-- Format code with `gofmt`
-- Use meaningful variable names
-- Keep functions focused and small
-- Add comments for exported functions
-- Document complex logic inline
-
-### File Organization
-
-- Place related functionality in the same package
-- Keep `pkg/` modular and single-responsibility
-- Use clear package names (analyzer, parser, cfg, verify)
-
-### Comments
-
-Comment exported functions and types:
-
-```go
-// Analyze performs static complexity analysis on eBPF bytecode.
-// It takes a file path and returns a ComplexityReport or error.
-func Analyze(filePath string) (*ComplexityReport, error) {
+### Manual Testing
+```bash
+bpfva analyze test/compiled/simple.o
+bpfva batch test/compiled --recursive
+bpfva verify test/compiled/simple.o --json
 ```
 
-## Testing Requirements
+## Commit Guidelines
 
-### Adding Tests
+Use clear, semantic commit messages:
 
-- Add test files alongside implementation (e.g., `analyzer_test.go`)
-- Use table-driven tests for multiple scenarios
-- Test both success and failure cases
-- Aim for >80% code coverage
+```
+[component] Brief description
 
-### Test File Organization
+Longer explanation of what changed and why.
+Any relevant context or trade-offs.
 
-```go
-package analyzer
-
-import "testing"
-
-func TestAnalyze(t *testing.T) {
-    tests := []struct {
-        name    string
-        input   string
-        want    int
-        wantErr bool
-    }{
-        {"valid program", "simple.o", 10, false},
-        {"invalid file", "missing.o", 0, true},
-    }
-    
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            // Test implementation
-        })
-    }
-}
+Fixes #123
 ```
 
-## Documentation
-
-### README Updates
-
-When adding features, update README.md:
-- Add command examples to "Command Reference"
-- Document new flags/options
-- Update architecture if needed
-
-### Inline Documentation
-
-- Use clear, technical language
-- Avoid jargon without explanation
-- Document assumptions and limitations
-
-### Release Notes
-
-For user-facing changes, document in appropriate changelog.
+Examples:
+```
+[parser] Handle LD_IMM64 across section boundaries
+[cfg] Improve loop detection with dominance analysis
+[verify] Add map_no_null_check rule
+[docs] Clarify register state propagation algorithm
+```
 
 ## Pull Request Process
 
-1. **Ensure tests pass**: `make test`
-2. **Build successfully**: `make build`
-3. **Code review**: Address feedback promptly
-4. **Maintainer approval**: Wait for maintainer sign-off
-5. **Merge**: PR will be merged to main branch
+1. **Create feature branch:**
+   ```bash
+   git checkout -b feature/descriptive-name
+   ```
 
-## Areas for Contribution
+2. **Make changes and test:**
+   ```bash
+   make test
+   go test ./...
+   ```
 
-### High Priority
+3. **Push and create PR:**
+   - Reference related issues
+   - Describe what changed and why
+   - Note testing performed
 
-- Additional eBPF program types (TC, kretprobe)
-- Enhanced helper profiles for different kernel versions
-- Improved register-state analysis
+4. **Address feedback** from review
 
-### Medium Priority
+5. **Merge** after approval
 
-- Architecture support (ARM64, RISC-V)
-- Performance optimizations
-- Documentation improvements
+## Known Limitations & Opportunities
 
-### Low Priority
+### Current Limitations
+- Tested on Linux 5.15 only (kernel version-specific behavior not modeled)
+- Register state tracking is conservative (may flag safe code as unsafe)
+- No field offset tracking within structures
+- Helper function side effects partially modeled
 
-- UI/UX enhancements
-- Example programs
-- Visualization improvements
+### Improvement Areas
+- **Multi-kernel support**: Test against 5.10, 6.1, 6.6+
+- **Field-sensitive analysis**: Track offsets within map values and stack
+- **Improved state merging**: Better handling at loop headers
+- **Performance profiling**: Find bottlenecks in large program analysis
 
-## Reporting Issues
+## Questions?
 
-When reporting bugs, include:
+- **Architecture questions**: See [ARCHITECTURE.md](./ARCHITECTURE.md)
+- **Methodology questions**: See [METHODOLOGY.md](./docs/METHODOLOGY.md)
+- **Usage questions**: See [EXAMPLES.md](./docs/EXAMPLES.md)
+- **General questions**: Open a GitHub Discussion or Issue
 
-- **Title**: Clear, descriptive
-- **Description**: What happened and what was expected
-- **Reproduction steps**: How to reproduce the issue
-- **Environment**: Go version, OS, kernel version
-- **Attachments**: Test program (if applicable)
+---
 
-Example:
-
-```
-Title: Analyzer crashes on large programs
-
-Description:
-When analyzing programs with >1000 instructions, the analyzer crashes.
-
-Steps to reproduce:
-1. Compile a large test program
-2. Run: bpfva analyze large_program.o
-3. Observe crash
-
-Environment:
-- Go 1.21
-- Linux 5.15
-- Kernel 5.15.0-56-generic
-```
-
-## Licensing
-
-By contributing, you agree that your contributions will be licensed under the Apache License 2.0. Ensure any new files include the license header if required.
-
-## Questions or Discussions
-
-- **General questions**: Use GitHub Discussions
-- **Bug reports**: Use GitHub Issues
-- **Feature requests**: Use GitHub Issues with `[FEATURE]` tag
-
-## Code of Conduct
-
-Contributors are expected to:
-- Be respectful and inclusive
-- Provide constructive feedback
+**Thank you for contributing!** This project benefits from technical depth and practical feedback.
 - Follow project conventions
 - Report violations to maintainers
 
